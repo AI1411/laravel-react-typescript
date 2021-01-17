@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use Carbon\Carbon;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /** @mixin \App\Models\Post */
@@ -17,7 +18,7 @@ class PostResource extends JsonResource
             'id' => $this->id,
             'title' => $this->title,
             'body' => $this->body,
-            'created_at' => $this->created_at,
+            'created_at' => Carbon::parse($this->created_at)->format('Y年n月j日'),
             'updated_at' => $this->updated_at,
 
             'category_id' => $this->category_id,

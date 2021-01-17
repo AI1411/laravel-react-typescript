@@ -32,6 +32,14 @@ use Illuminate\Notifications\Notifiable;
  * @method static \Illuminate\Database\Eloquent\Builder|User whereRememberToken($value)
  * @method static \Illuminate\Database\Eloquent\Builder|User whereUpdatedAt($value)
  * @mixin \Eloquent
+ * @property string $image
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereImage($value)
+ * @property string $location
+ * @property string $introduction
+ * @property string $github
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereGithub($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereIntroduction($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|User whereLocation($value)
  */
 class User extends Authenticatable
 {
