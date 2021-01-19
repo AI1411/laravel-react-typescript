@@ -79,6 +79,1839 @@ function _objectWithoutPropertiesLoose(source, excluded) {
 
 /***/ }),
 
+/***/ "./node_modules/axios/index.js":
+/*!*************************************!*\
+  !*** ./node_modules/axios/index.js ***!
+  \*************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+module.exports = __webpack_require__(/*! ./lib/axios */ "./node_modules/axios/lib/axios.js");
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/adapters/xhr.js":
+/*!************************************************!*\
+  !*** ./node_modules/axios/lib/adapters/xhr.js ***!
+  \************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var settle = __webpack_require__(/*! ./../core/settle */ "./node_modules/axios/lib/core/settle.js");
+var cookies = __webpack_require__(/*! ./../helpers/cookies */ "./node_modules/axios/lib/helpers/cookies.js");
+var buildURL = __webpack_require__(/*! ./../helpers/buildURL */ "./node_modules/axios/lib/helpers/buildURL.js");
+var buildFullPath = __webpack_require__(/*! ../core/buildFullPath */ "./node_modules/axios/lib/core/buildFullPath.js");
+var parseHeaders = __webpack_require__(/*! ./../helpers/parseHeaders */ "./node_modules/axios/lib/helpers/parseHeaders.js");
+var isURLSameOrigin = __webpack_require__(/*! ./../helpers/isURLSameOrigin */ "./node_modules/axios/lib/helpers/isURLSameOrigin.js");
+var createError = __webpack_require__(/*! ../core/createError */ "./node_modules/axios/lib/core/createError.js");
+
+module.exports = function xhrAdapter(config) {
+  return new Promise(function dispatchXhrRequest(resolve, reject) {
+    var requestData = config.data;
+    var requestHeaders = config.headers;
+
+    if (utils.isFormData(requestData)) {
+      delete requestHeaders['Content-Type']; // Let the browser set it
+    }
+
+    var request = new XMLHttpRequest();
+
+    // HTTP basic authentication
+    if (config.auth) {
+      var username = config.auth.username || '';
+      var password = config.auth.password ? unescape(encodeURIComponent(config.auth.password)) : '';
+      requestHeaders.Authorization = 'Basic ' + btoa(username + ':' + password);
+    }
+
+    var fullPath = buildFullPath(config.baseURL, config.url);
+    request.open(config.method.toUpperCase(), buildURL(fullPath, config.params, config.paramsSerializer), true);
+
+    // Set the request timeout in MS
+    request.timeout = config.timeout;
+
+    // Listen for ready state
+    request.onreadystatechange = function handleLoad() {
+      if (!request || request.readyState !== 4) {
+        return;
+      }
+
+      // The request errored out and we didn't get a response, this will be
+      // handled by onerror instead
+      // With one exception: request that using file: protocol, most browsers
+      // will return status as 0 even though it's a successful request
+      if (request.status === 0 && !(request.responseURL && request.responseURL.indexOf('file:') === 0)) {
+        return;
+      }
+
+      // Prepare the response
+      var responseHeaders = 'getAllResponseHeaders' in request ? parseHeaders(request.getAllResponseHeaders()) : null;
+      var responseData = !config.responseType || config.responseType === 'text' ? request.responseText : request.response;
+      var response = {
+        data: responseData,
+        status: request.status,
+        statusText: request.statusText,
+        headers: responseHeaders,
+        config: config,
+        request: request
+      };
+
+      settle(resolve, reject, response);
+
+      // Clean up request
+      request = null;
+    };
+
+    // Handle browser request cancellation (as opposed to a manual cancellation)
+    request.onabort = function handleAbort() {
+      if (!request) {
+        return;
+      }
+
+      reject(createError('Request aborted', config, 'ECONNABORTED', request));
+
+      // Clean up request
+      request = null;
+    };
+
+    // Handle low level network errors
+    request.onerror = function handleError() {
+      // Real errors are hidden from us by the browser
+      // onerror should only fire if it's a network error
+      reject(createError('Network Error', config, null, request));
+
+      // Clean up request
+      request = null;
+    };
+
+    // Handle timeout
+    request.ontimeout = function handleTimeout() {
+      var timeoutErrorMessage = 'timeout of ' + config.timeout + 'ms exceeded';
+      if (config.timeoutErrorMessage) {
+        timeoutErrorMessage = config.timeoutErrorMessage;
+      }
+      reject(createError(timeoutErrorMessage, config, 'ECONNABORTED',
+        request));
+
+      // Clean up request
+      request = null;
+    };
+
+    // Add xsrf header
+    // This is only done if running in a standard browser environment.
+    // Specifically not if we're in a web worker, or react-native.
+    if (utils.isStandardBrowserEnv()) {
+      // Add xsrf header
+      var xsrfValue = (config.withCredentials || isURLSameOrigin(fullPath)) && config.xsrfCookieName ?
+        cookies.read(config.xsrfCookieName) :
+        undefined;
+
+      if (xsrfValue) {
+        requestHeaders[config.xsrfHeaderName] = xsrfValue;
+      }
+    }
+
+    // Add headers to the request
+    if ('setRequestHeader' in request) {
+      utils.forEach(requestHeaders, function setRequestHeader(val, key) {
+        if (typeof requestData === 'undefined' && key.toLowerCase() === 'content-type') {
+          // Remove Content-Type if data is undefined
+          delete requestHeaders[key];
+        } else {
+          // Otherwise add header to the request
+          request.setRequestHeader(key, val);
+        }
+      });
+    }
+
+    // Add withCredentials to request if needed
+    if (!utils.isUndefined(config.withCredentials)) {
+      request.withCredentials = !!config.withCredentials;
+    }
+
+    // Add responseType to request if needed
+    if (config.responseType) {
+      try {
+        request.responseType = config.responseType;
+      } catch (e) {
+        // Expected DOMException thrown by browsers not compatible XMLHttpRequest Level 2.
+        // But, this can be suppressed for 'json' type as it can be parsed by default 'transformResponse' function.
+        if (config.responseType !== 'json') {
+          throw e;
+        }
+      }
+    }
+
+    // Handle progress if needed
+    if (typeof config.onDownloadProgress === 'function') {
+      request.addEventListener('progress', config.onDownloadProgress);
+    }
+
+    // Not all browsers support upload events
+    if (typeof config.onUploadProgress === 'function' && request.upload) {
+      request.upload.addEventListener('progress', config.onUploadProgress);
+    }
+
+    if (config.cancelToken) {
+      // Handle cancellation
+      config.cancelToken.promise.then(function onCanceled(cancel) {
+        if (!request) {
+          return;
+        }
+
+        request.abort();
+        reject(cancel);
+        // Clean up request
+        request = null;
+      });
+    }
+
+    if (!requestData) {
+      requestData = null;
+    }
+
+    // Send the request
+    request.send(requestData);
+  });
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/axios.js":
+/*!*****************************************!*\
+  !*** ./node_modules/axios/lib/axios.js ***!
+  \*****************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./utils */ "./node_modules/axios/lib/utils.js");
+var bind = __webpack_require__(/*! ./helpers/bind */ "./node_modules/axios/lib/helpers/bind.js");
+var Axios = __webpack_require__(/*! ./core/Axios */ "./node_modules/axios/lib/core/Axios.js");
+var mergeConfig = __webpack_require__(/*! ./core/mergeConfig */ "./node_modules/axios/lib/core/mergeConfig.js");
+var defaults = __webpack_require__(/*! ./defaults */ "./node_modules/axios/lib/defaults.js");
+
+/**
+ * Create an instance of Axios
+ *
+ * @param {Object} defaultConfig The default config for the instance
+ * @return {Axios} A new instance of Axios
+ */
+function createInstance(defaultConfig) {
+  var context = new Axios(defaultConfig);
+  var instance = bind(Axios.prototype.request, context);
+
+  // Copy axios.prototype to instance
+  utils.extend(instance, Axios.prototype, context);
+
+  // Copy context to instance
+  utils.extend(instance, context);
+
+  return instance;
+}
+
+// Create the default instance to be exported
+var axios = createInstance(defaults);
+
+// Expose Axios class to allow class inheritance
+axios.Axios = Axios;
+
+// Factory for creating new instances
+axios.create = function create(instanceConfig) {
+  return createInstance(mergeConfig(axios.defaults, instanceConfig));
+};
+
+// Expose Cancel & CancelToken
+axios.Cancel = __webpack_require__(/*! ./cancel/Cancel */ "./node_modules/axios/lib/cancel/Cancel.js");
+axios.CancelToken = __webpack_require__(/*! ./cancel/CancelToken */ "./node_modules/axios/lib/cancel/CancelToken.js");
+axios.isCancel = __webpack_require__(/*! ./cancel/isCancel */ "./node_modules/axios/lib/cancel/isCancel.js");
+
+// Expose all/spread
+axios.all = function all(promises) {
+  return Promise.all(promises);
+};
+axios.spread = __webpack_require__(/*! ./helpers/spread */ "./node_modules/axios/lib/helpers/spread.js");
+
+// Expose isAxiosError
+axios.isAxiosError = __webpack_require__(/*! ./helpers/isAxiosError */ "./node_modules/axios/lib/helpers/isAxiosError.js");
+
+module.exports = axios;
+
+// Allow use of default import syntax in TypeScript
+module.exports.default = axios;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/cancel/Cancel.js":
+/*!*************************************************!*\
+  !*** ./node_modules/axios/lib/cancel/Cancel.js ***!
+  \*************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+/**
+ * A `Cancel` is an object that is thrown when an operation is canceled.
+ *
+ * @class
+ * @param {string=} message The message.
+ */
+function Cancel(message) {
+  this.message = message;
+}
+
+Cancel.prototype.toString = function toString() {
+  return 'Cancel' + (this.message ? ': ' + this.message : '');
+};
+
+Cancel.prototype.__CANCEL__ = true;
+
+module.exports = Cancel;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/cancel/CancelToken.js":
+/*!******************************************************!*\
+  !*** ./node_modules/axios/lib/cancel/CancelToken.js ***!
+  \******************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var Cancel = __webpack_require__(/*! ./Cancel */ "./node_modules/axios/lib/cancel/Cancel.js");
+
+/**
+ * A `CancelToken` is an object that can be used to request cancellation of an operation.
+ *
+ * @class
+ * @param {Function} executor The executor function.
+ */
+function CancelToken(executor) {
+  if (typeof executor !== 'function') {
+    throw new TypeError('executor must be a function.');
+  }
+
+  var resolvePromise;
+  this.promise = new Promise(function promiseExecutor(resolve) {
+    resolvePromise = resolve;
+  });
+
+  var token = this;
+  executor(function cancel(message) {
+    if (token.reason) {
+      // Cancellation has already been requested
+      return;
+    }
+
+    token.reason = new Cancel(message);
+    resolvePromise(token.reason);
+  });
+}
+
+/**
+ * Throws a `Cancel` if cancellation has been requested.
+ */
+CancelToken.prototype.throwIfRequested = function throwIfRequested() {
+  if (this.reason) {
+    throw this.reason;
+  }
+};
+
+/**
+ * Returns an object that contains a new `CancelToken` and a function that, when called,
+ * cancels the `CancelToken`.
+ */
+CancelToken.source = function source() {
+  var cancel;
+  var token = new CancelToken(function executor(c) {
+    cancel = c;
+  });
+  return {
+    token: token,
+    cancel: cancel
+  };
+};
+
+module.exports = CancelToken;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/cancel/isCancel.js":
+/*!***************************************************!*\
+  !*** ./node_modules/axios/lib/cancel/isCancel.js ***!
+  \***************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+module.exports = function isCancel(value) {
+  return !!(value && value.__CANCEL__);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/Axios.js":
+/*!**********************************************!*\
+  !*** ./node_modules/axios/lib/core/Axios.js ***!
+  \**********************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var buildURL = __webpack_require__(/*! ../helpers/buildURL */ "./node_modules/axios/lib/helpers/buildURL.js");
+var InterceptorManager = __webpack_require__(/*! ./InterceptorManager */ "./node_modules/axios/lib/core/InterceptorManager.js");
+var dispatchRequest = __webpack_require__(/*! ./dispatchRequest */ "./node_modules/axios/lib/core/dispatchRequest.js");
+var mergeConfig = __webpack_require__(/*! ./mergeConfig */ "./node_modules/axios/lib/core/mergeConfig.js");
+
+/**
+ * Create a new instance of Axios
+ *
+ * @param {Object} instanceConfig The default config for the instance
+ */
+function Axios(instanceConfig) {
+  this.defaults = instanceConfig;
+  this.interceptors = {
+    request: new InterceptorManager(),
+    response: new InterceptorManager()
+  };
+}
+
+/**
+ * Dispatch a request
+ *
+ * @param {Object} config The config specific for this request (merged with this.defaults)
+ */
+Axios.prototype.request = function request(config) {
+  /*eslint no-param-reassign:0*/
+  // Allow for axios('example/url'[, config]) a la fetch API
+  if (typeof config === 'string') {
+    config = arguments[1] || {};
+    config.url = arguments[0];
+  } else {
+    config = config || {};
+  }
+
+  config = mergeConfig(this.defaults, config);
+
+  // Set config.method
+  if (config.method) {
+    config.method = config.method.toLowerCase();
+  } else if (this.defaults.method) {
+    config.method = this.defaults.method.toLowerCase();
+  } else {
+    config.method = 'get';
+  }
+
+  // Hook up interceptors middleware
+  var chain = [dispatchRequest, undefined];
+  var promise = Promise.resolve(config);
+
+  this.interceptors.request.forEach(function unshiftRequestInterceptors(interceptor) {
+    chain.unshift(interceptor.fulfilled, interceptor.rejected);
+  });
+
+  this.interceptors.response.forEach(function pushResponseInterceptors(interceptor) {
+    chain.push(interceptor.fulfilled, interceptor.rejected);
+  });
+
+  while (chain.length) {
+    promise = promise.then(chain.shift(), chain.shift());
+  }
+
+  return promise;
+};
+
+Axios.prototype.getUri = function getUri(config) {
+  config = mergeConfig(this.defaults, config);
+  return buildURL(config.url, config.params, config.paramsSerializer).replace(/^\?/, '');
+};
+
+// Provide aliases for supported request methods
+utils.forEach(['delete', 'get', 'head', 'options'], function forEachMethodNoData(method) {
+  /*eslint func-names:0*/
+  Axios.prototype[method] = function(url, config) {
+    return this.request(mergeConfig(config || {}, {
+      method: method,
+      url: url,
+      data: (config || {}).data
+    }));
+  };
+});
+
+utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
+  /*eslint func-names:0*/
+  Axios.prototype[method] = function(url, data, config) {
+    return this.request(mergeConfig(config || {}, {
+      method: method,
+      url: url,
+      data: data
+    }));
+  };
+});
+
+module.exports = Axios;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/InterceptorManager.js":
+/*!***********************************************************!*\
+  !*** ./node_modules/axios/lib/core/InterceptorManager.js ***!
+  \***********************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+function InterceptorManager() {
+  this.handlers = [];
+}
+
+/**
+ * Add a new interceptor to the stack
+ *
+ * @param {Function} fulfilled The function to handle `then` for a `Promise`
+ * @param {Function} rejected The function to handle `reject` for a `Promise`
+ *
+ * @return {Number} An ID used to remove interceptor later
+ */
+InterceptorManager.prototype.use = function use(fulfilled, rejected) {
+  this.handlers.push({
+    fulfilled: fulfilled,
+    rejected: rejected
+  });
+  return this.handlers.length - 1;
+};
+
+/**
+ * Remove an interceptor from the stack
+ *
+ * @param {Number} id The ID that was returned by `use`
+ */
+InterceptorManager.prototype.eject = function eject(id) {
+  if (this.handlers[id]) {
+    this.handlers[id] = null;
+  }
+};
+
+/**
+ * Iterate over all the registered interceptors
+ *
+ * This method is particularly useful for skipping over any
+ * interceptors that may have become `null` calling `eject`.
+ *
+ * @param {Function} fn The function to call for each interceptor
+ */
+InterceptorManager.prototype.forEach = function forEach(fn) {
+  utils.forEach(this.handlers, function forEachHandler(h) {
+    if (h !== null) {
+      fn(h);
+    }
+  });
+};
+
+module.exports = InterceptorManager;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/buildFullPath.js":
+/*!******************************************************!*\
+  !*** ./node_modules/axios/lib/core/buildFullPath.js ***!
+  \******************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var isAbsoluteURL = __webpack_require__(/*! ../helpers/isAbsoluteURL */ "./node_modules/axios/lib/helpers/isAbsoluteURL.js");
+var combineURLs = __webpack_require__(/*! ../helpers/combineURLs */ "./node_modules/axios/lib/helpers/combineURLs.js");
+
+/**
+ * Creates a new URL by combining the baseURL with the requestedURL,
+ * only when the requestedURL is not already an absolute URL.
+ * If the requestURL is absolute, this function returns the requestedURL untouched.
+ *
+ * @param {string} baseURL The base URL
+ * @param {string} requestedURL Absolute or relative URL to combine
+ * @returns {string} The combined full path
+ */
+module.exports = function buildFullPath(baseURL, requestedURL) {
+  if (baseURL && !isAbsoluteURL(requestedURL)) {
+    return combineURLs(baseURL, requestedURL);
+  }
+  return requestedURL;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/createError.js":
+/*!****************************************************!*\
+  !*** ./node_modules/axios/lib/core/createError.js ***!
+  \****************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var enhanceError = __webpack_require__(/*! ./enhanceError */ "./node_modules/axios/lib/core/enhanceError.js");
+
+/**
+ * Create an Error with the specified message, config, error code, request and response.
+ *
+ * @param {string} message The error message.
+ * @param {Object} config The config.
+ * @param {string} [code] The error code (for example, 'ECONNABORTED').
+ * @param {Object} [request] The request.
+ * @param {Object} [response] The response.
+ * @returns {Error} The created error.
+ */
+module.exports = function createError(message, config, code, request, response) {
+  var error = new Error(message);
+  return enhanceError(error, config, code, request, response);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/dispatchRequest.js":
+/*!********************************************************!*\
+  !*** ./node_modules/axios/lib/core/dispatchRequest.js ***!
+  \********************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+var transformData = __webpack_require__(/*! ./transformData */ "./node_modules/axios/lib/core/transformData.js");
+var isCancel = __webpack_require__(/*! ../cancel/isCancel */ "./node_modules/axios/lib/cancel/isCancel.js");
+var defaults = __webpack_require__(/*! ../defaults */ "./node_modules/axios/lib/defaults.js");
+
+/**
+ * Throws a `Cancel` if cancellation has been requested.
+ */
+function throwIfCancellationRequested(config) {
+  if (config.cancelToken) {
+    config.cancelToken.throwIfRequested();
+  }
+}
+
+/**
+ * Dispatch a request to the server using the configured adapter.
+ *
+ * @param {object} config The config that is to be used for the request
+ * @returns {Promise} The Promise to be fulfilled
+ */
+module.exports = function dispatchRequest(config) {
+  throwIfCancellationRequested(config);
+
+  // Ensure headers exist
+  config.headers = config.headers || {};
+
+  // Transform request data
+  config.data = transformData(
+    config.data,
+    config.headers,
+    config.transformRequest
+  );
+
+  // Flatten headers
+  config.headers = utils.merge(
+    config.headers.common || {},
+    config.headers[config.method] || {},
+    config.headers
+  );
+
+  utils.forEach(
+    ['delete', 'get', 'head', 'post', 'put', 'patch', 'common'],
+    function cleanHeaderConfig(method) {
+      delete config.headers[method];
+    }
+  );
+
+  var adapter = config.adapter || defaults.adapter;
+
+  return adapter(config).then(function onAdapterResolution(response) {
+    throwIfCancellationRequested(config);
+
+    // Transform response data
+    response.data = transformData(
+      response.data,
+      response.headers,
+      config.transformResponse
+    );
+
+    return response;
+  }, function onAdapterRejection(reason) {
+    if (!isCancel(reason)) {
+      throwIfCancellationRequested(config);
+
+      // Transform response data
+      if (reason && reason.response) {
+        reason.response.data = transformData(
+          reason.response.data,
+          reason.response.headers,
+          config.transformResponse
+        );
+      }
+    }
+
+    return Promise.reject(reason);
+  });
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/enhanceError.js":
+/*!*****************************************************!*\
+  !*** ./node_modules/axios/lib/core/enhanceError.js ***!
+  \*****************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+/**
+ * Update an Error with the specified config, error code, and response.
+ *
+ * @param {Error} error The error to update.
+ * @param {Object} config The config.
+ * @param {string} [code] The error code (for example, 'ECONNABORTED').
+ * @param {Object} [request] The request.
+ * @param {Object} [response] The response.
+ * @returns {Error} The error.
+ */
+module.exports = function enhanceError(error, config, code, request, response) {
+  error.config = config;
+  if (code) {
+    error.code = code;
+  }
+
+  error.request = request;
+  error.response = response;
+  error.isAxiosError = true;
+
+  error.toJSON = function toJSON() {
+    return {
+      // Standard
+      message: this.message,
+      name: this.name,
+      // Microsoft
+      description: this.description,
+      number: this.number,
+      // Mozilla
+      fileName: this.fileName,
+      lineNumber: this.lineNumber,
+      columnNumber: this.columnNumber,
+      stack: this.stack,
+      // Axios
+      config: this.config,
+      code: this.code
+    };
+  };
+  return error;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/mergeConfig.js":
+/*!****************************************************!*\
+  !*** ./node_modules/axios/lib/core/mergeConfig.js ***!
+  \****************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ../utils */ "./node_modules/axios/lib/utils.js");
+
+/**
+ * Config-specific merge-function which creates a new config-object
+ * by merging two configuration objects together.
+ *
+ * @param {Object} config1
+ * @param {Object} config2
+ * @returns {Object} New object resulting from merging config2 to config1
+ */
+module.exports = function mergeConfig(config1, config2) {
+  // eslint-disable-next-line no-param-reassign
+  config2 = config2 || {};
+  var config = {};
+
+  var valueFromConfig2Keys = ['url', 'method', 'data'];
+  var mergeDeepPropertiesKeys = ['headers', 'auth', 'proxy', 'params'];
+  var defaultToConfig2Keys = [
+    'baseURL', 'transformRequest', 'transformResponse', 'paramsSerializer',
+    'timeout', 'timeoutMessage', 'withCredentials', 'adapter', 'responseType', 'xsrfCookieName',
+    'xsrfHeaderName', 'onUploadProgress', 'onDownloadProgress', 'decompress',
+    'maxContentLength', 'maxBodyLength', 'maxRedirects', 'transport', 'httpAgent',
+    'httpsAgent', 'cancelToken', 'socketPath', 'responseEncoding'
+  ];
+  var directMergeKeys = ['validateStatus'];
+
+  function getMergedValue(target, source) {
+    if (utils.isPlainObject(target) && utils.isPlainObject(source)) {
+      return utils.merge(target, source);
+    } else if (utils.isPlainObject(source)) {
+      return utils.merge({}, source);
+    } else if (utils.isArray(source)) {
+      return source.slice();
+    }
+    return source;
+  }
+
+  function mergeDeepProperties(prop) {
+    if (!utils.isUndefined(config2[prop])) {
+      config[prop] = getMergedValue(config1[prop], config2[prop]);
+    } else if (!utils.isUndefined(config1[prop])) {
+      config[prop] = getMergedValue(undefined, config1[prop]);
+    }
+  }
+
+  utils.forEach(valueFromConfig2Keys, function valueFromConfig2(prop) {
+    if (!utils.isUndefined(config2[prop])) {
+      config[prop] = getMergedValue(undefined, config2[prop]);
+    }
+  });
+
+  utils.forEach(mergeDeepPropertiesKeys, mergeDeepProperties);
+
+  utils.forEach(defaultToConfig2Keys, function defaultToConfig2(prop) {
+    if (!utils.isUndefined(config2[prop])) {
+      config[prop] = getMergedValue(undefined, config2[prop]);
+    } else if (!utils.isUndefined(config1[prop])) {
+      config[prop] = getMergedValue(undefined, config1[prop]);
+    }
+  });
+
+  utils.forEach(directMergeKeys, function merge(prop) {
+    if (prop in config2) {
+      config[prop] = getMergedValue(config1[prop], config2[prop]);
+    } else if (prop in config1) {
+      config[prop] = getMergedValue(undefined, config1[prop]);
+    }
+  });
+
+  var axiosKeys = valueFromConfig2Keys
+    .concat(mergeDeepPropertiesKeys)
+    .concat(defaultToConfig2Keys)
+    .concat(directMergeKeys);
+
+  var otherKeys = Object
+    .keys(config1)
+    .concat(Object.keys(config2))
+    .filter(function filterAxiosKeys(key) {
+      return axiosKeys.indexOf(key) === -1;
+    });
+
+  utils.forEach(otherKeys, mergeDeepProperties);
+
+  return config;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/settle.js":
+/*!***********************************************!*\
+  !*** ./node_modules/axios/lib/core/settle.js ***!
+  \***********************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var createError = __webpack_require__(/*! ./createError */ "./node_modules/axios/lib/core/createError.js");
+
+/**
+ * Resolve or reject a Promise based on response status.
+ *
+ * @param {Function} resolve A function that resolves the promise.
+ * @param {Function} reject A function that rejects the promise.
+ * @param {object} response The response.
+ */
+module.exports = function settle(resolve, reject, response) {
+  var validateStatus = response.config.validateStatus;
+  if (!response.status || !validateStatus || validateStatus(response.status)) {
+    resolve(response);
+  } else {
+    reject(createError(
+      'Request failed with status code ' + response.status,
+      response.config,
+      null,
+      response.request,
+      response
+    ));
+  }
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/core/transformData.js":
+/*!******************************************************!*\
+  !*** ./node_modules/axios/lib/core/transformData.js ***!
+  \******************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+/**
+ * Transform the data for a request or a response
+ *
+ * @param {Object|String} data The data to be transformed
+ * @param {Array} headers The headers for the request or response
+ * @param {Array|Function} fns A single function or Array of functions
+ * @returns {*} The resulting transformed data
+ */
+module.exports = function transformData(data, headers, fns) {
+  /*eslint no-param-reassign:0*/
+  utils.forEach(fns, function transform(fn) {
+    data = fn(data, headers);
+  });
+
+  return data;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/defaults.js":
+/*!********************************************!*\
+  !*** ./node_modules/axios/lib/defaults.js ***!
+  \********************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+/* provided dependency */ var process = __webpack_require__(/*! process/browser */ "./node_modules/process/browser.js");
+
+
+var utils = __webpack_require__(/*! ./utils */ "./node_modules/axios/lib/utils.js");
+var normalizeHeaderName = __webpack_require__(/*! ./helpers/normalizeHeaderName */ "./node_modules/axios/lib/helpers/normalizeHeaderName.js");
+
+var DEFAULT_CONTENT_TYPE = {
+  'Content-Type': 'application/x-www-form-urlencoded'
+};
+
+function setContentTypeIfUnset(headers, value) {
+  if (!utils.isUndefined(headers) && utils.isUndefined(headers['Content-Type'])) {
+    headers['Content-Type'] = value;
+  }
+}
+
+function getDefaultAdapter() {
+  var adapter;
+  if (typeof XMLHttpRequest !== 'undefined') {
+    // For browsers use XHR adapter
+    adapter = __webpack_require__(/*! ./adapters/xhr */ "./node_modules/axios/lib/adapters/xhr.js");
+  } else if (typeof process !== 'undefined' && Object.prototype.toString.call(process) === '[object process]') {
+    // For node use HTTP adapter
+    adapter = __webpack_require__(/*! ./adapters/http */ "./node_modules/axios/lib/adapters/xhr.js");
+  }
+  return adapter;
+}
+
+var defaults = {
+  adapter: getDefaultAdapter(),
+
+  transformRequest: [function transformRequest(data, headers) {
+    normalizeHeaderName(headers, 'Accept');
+    normalizeHeaderName(headers, 'Content-Type');
+    if (utils.isFormData(data) ||
+      utils.isArrayBuffer(data) ||
+      utils.isBuffer(data) ||
+      utils.isStream(data) ||
+      utils.isFile(data) ||
+      utils.isBlob(data)
+    ) {
+      return data;
+    }
+    if (utils.isArrayBufferView(data)) {
+      return data.buffer;
+    }
+    if (utils.isURLSearchParams(data)) {
+      setContentTypeIfUnset(headers, 'application/x-www-form-urlencoded;charset=utf-8');
+      return data.toString();
+    }
+    if (utils.isObject(data)) {
+      setContentTypeIfUnset(headers, 'application/json;charset=utf-8');
+      return JSON.stringify(data);
+    }
+    return data;
+  }],
+
+  transformResponse: [function transformResponse(data) {
+    /*eslint no-param-reassign:0*/
+    if (typeof data === 'string') {
+      try {
+        data = JSON.parse(data);
+      } catch (e) { /* Ignore */ }
+    }
+    return data;
+  }],
+
+  /**
+   * A timeout in milliseconds to abort a request. If set to 0 (default) a
+   * timeout is not created.
+   */
+  timeout: 0,
+
+  xsrfCookieName: 'XSRF-TOKEN',
+  xsrfHeaderName: 'X-XSRF-TOKEN',
+
+  maxContentLength: -1,
+  maxBodyLength: -1,
+
+  validateStatus: function validateStatus(status) {
+    return status >= 200 && status < 300;
+  }
+};
+
+defaults.headers = {
+  common: {
+    'Accept': 'application/json, text/plain, */*'
+  }
+};
+
+utils.forEach(['delete', 'get', 'head'], function forEachMethodNoData(method) {
+  defaults.headers[method] = {};
+});
+
+utils.forEach(['post', 'put', 'patch'], function forEachMethodWithData(method) {
+  defaults.headers[method] = utils.merge(DEFAULT_CONTENT_TYPE);
+});
+
+module.exports = defaults;
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/bind.js":
+/*!************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/bind.js ***!
+  \************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+module.exports = function bind(fn, thisArg) {
+  return function wrap() {
+    var args = new Array(arguments.length);
+    for (var i = 0; i < args.length; i++) {
+      args[i] = arguments[i];
+    }
+    return fn.apply(thisArg, args);
+  };
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/buildURL.js":
+/*!****************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/buildURL.js ***!
+  \****************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+function encode(val) {
+  return encodeURIComponent(val).
+    replace(/%3A/gi, ':').
+    replace(/%24/g, '$').
+    replace(/%2C/gi, ',').
+    replace(/%20/g, '+').
+    replace(/%5B/gi, '[').
+    replace(/%5D/gi, ']');
+}
+
+/**
+ * Build a URL by appending params to the end
+ *
+ * @param {string} url The base of the url (e.g., http://www.google.com)
+ * @param {object} [params] The params to be appended
+ * @returns {string} The formatted url
+ */
+module.exports = function buildURL(url, params, paramsSerializer) {
+  /*eslint no-param-reassign:0*/
+  if (!params) {
+    return url;
+  }
+
+  var serializedParams;
+  if (paramsSerializer) {
+    serializedParams = paramsSerializer(params);
+  } else if (utils.isURLSearchParams(params)) {
+    serializedParams = params.toString();
+  } else {
+    var parts = [];
+
+    utils.forEach(params, function serialize(val, key) {
+      if (val === null || typeof val === 'undefined') {
+        return;
+      }
+
+      if (utils.isArray(val)) {
+        key = key + '[]';
+      } else {
+        val = [val];
+      }
+
+      utils.forEach(val, function parseValue(v) {
+        if (utils.isDate(v)) {
+          v = v.toISOString();
+        } else if (utils.isObject(v)) {
+          v = JSON.stringify(v);
+        }
+        parts.push(encode(key) + '=' + encode(v));
+      });
+    });
+
+    serializedParams = parts.join('&');
+  }
+
+  if (serializedParams) {
+    var hashmarkIndex = url.indexOf('#');
+    if (hashmarkIndex !== -1) {
+      url = url.slice(0, hashmarkIndex);
+    }
+
+    url += (url.indexOf('?') === -1 ? '?' : '&') + serializedParams;
+  }
+
+  return url;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/combineURLs.js":
+/*!*******************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/combineURLs.js ***!
+  \*******************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+/**
+ * Creates a new URL by combining the specified URLs
+ *
+ * @param {string} baseURL The base URL
+ * @param {string} relativeURL The relative URL
+ * @returns {string} The combined URL
+ */
+module.exports = function combineURLs(baseURL, relativeURL) {
+  return relativeURL
+    ? baseURL.replace(/\/+$/, '') + '/' + relativeURL.replace(/^\/+/, '')
+    : baseURL;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/cookies.js":
+/*!***************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/cookies.js ***!
+  \***************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+module.exports = (
+  utils.isStandardBrowserEnv() ?
+
+  // Standard browser envs support document.cookie
+    (function standardBrowserEnv() {
+      return {
+        write: function write(name, value, expires, path, domain, secure) {
+          var cookie = [];
+          cookie.push(name + '=' + encodeURIComponent(value));
+
+          if (utils.isNumber(expires)) {
+            cookie.push('expires=' + new Date(expires).toGMTString());
+          }
+
+          if (utils.isString(path)) {
+            cookie.push('path=' + path);
+          }
+
+          if (utils.isString(domain)) {
+            cookie.push('domain=' + domain);
+          }
+
+          if (secure === true) {
+            cookie.push('secure');
+          }
+
+          document.cookie = cookie.join('; ');
+        },
+
+        read: function read(name) {
+          var match = document.cookie.match(new RegExp('(^|;\\s*)(' + name + ')=([^;]*)'));
+          return (match ? decodeURIComponent(match[3]) : null);
+        },
+
+        remove: function remove(name) {
+          this.write(name, '', Date.now() - 86400000);
+        }
+      };
+    })() :
+
+  // Non standard browser env (web workers, react-native) lack needed support.
+    (function nonStandardBrowserEnv() {
+      return {
+        write: function write() {},
+        read: function read() { return null; },
+        remove: function remove() {}
+      };
+    })()
+);
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/isAbsoluteURL.js":
+/*!*********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/isAbsoluteURL.js ***!
+  \*********************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+/**
+ * Determines whether the specified URL is absolute
+ *
+ * @param {string} url The URL to test
+ * @returns {boolean} True if the specified URL is absolute, otherwise false
+ */
+module.exports = function isAbsoluteURL(url) {
+  // A URL is considered absolute if it begins with "<scheme>://" or "//" (protocol-relative URL).
+  // RFC 3986 defines scheme name as a sequence of characters beginning with a letter and followed
+  // by any combination of letters, digits, plus, period, or hyphen.
+  return /^([a-z][a-z\d\+\-\.]*:)?\/\//i.test(url);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/isAxiosError.js":
+/*!********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/isAxiosError.js ***!
+  \********************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+/**
+ * Determines whether the payload is an error thrown by Axios
+ *
+ * @param {*} payload The value to test
+ * @returns {boolean} True if the payload is an error thrown by Axios, otherwise false
+ */
+module.exports = function isAxiosError(payload) {
+  return (typeof payload === 'object') && (payload.isAxiosError === true);
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/isURLSameOrigin.js":
+/*!***********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/isURLSameOrigin.js ***!
+  \***********************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+module.exports = (
+  utils.isStandardBrowserEnv() ?
+
+  // Standard browser envs have full support of the APIs needed to test
+  // whether the request URL is of the same origin as current location.
+    (function standardBrowserEnv() {
+      var msie = /(msie|trident)/i.test(navigator.userAgent);
+      var urlParsingNode = document.createElement('a');
+      var originURL;
+
+      /**
+    * Parse a URL to discover it's components
+    *
+    * @param {String} url The URL to be parsed
+    * @returns {Object}
+    */
+      function resolveURL(url) {
+        var href = url;
+
+        if (msie) {
+        // IE needs attribute set twice to normalize properties
+          urlParsingNode.setAttribute('href', href);
+          href = urlParsingNode.href;
+        }
+
+        urlParsingNode.setAttribute('href', href);
+
+        // urlParsingNode provides the UrlUtils interface - http://url.spec.whatwg.org/#urlutils
+        return {
+          href: urlParsingNode.href,
+          protocol: urlParsingNode.protocol ? urlParsingNode.protocol.replace(/:$/, '') : '',
+          host: urlParsingNode.host,
+          search: urlParsingNode.search ? urlParsingNode.search.replace(/^\?/, '') : '',
+          hash: urlParsingNode.hash ? urlParsingNode.hash.replace(/^#/, '') : '',
+          hostname: urlParsingNode.hostname,
+          port: urlParsingNode.port,
+          pathname: (urlParsingNode.pathname.charAt(0) === '/') ?
+            urlParsingNode.pathname :
+            '/' + urlParsingNode.pathname
+        };
+      }
+
+      originURL = resolveURL(window.location.href);
+
+      /**
+    * Determine if a URL shares the same origin as the current location
+    *
+    * @param {String} requestURL The URL to test
+    * @returns {boolean} True if URL shares the same origin, otherwise false
+    */
+      return function isURLSameOrigin(requestURL) {
+        var parsed = (utils.isString(requestURL)) ? resolveURL(requestURL) : requestURL;
+        return (parsed.protocol === originURL.protocol &&
+            parsed.host === originURL.host);
+      };
+    })() :
+
+  // Non standard browser envs (web workers, react-native) lack needed support.
+    (function nonStandardBrowserEnv() {
+      return function isURLSameOrigin() {
+        return true;
+      };
+    })()
+);
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/normalizeHeaderName.js":
+/*!***************************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/normalizeHeaderName.js ***!
+  \***************************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ../utils */ "./node_modules/axios/lib/utils.js");
+
+module.exports = function normalizeHeaderName(headers, normalizedName) {
+  utils.forEach(headers, function processHeader(value, name) {
+    if (name !== normalizedName && name.toUpperCase() === normalizedName.toUpperCase()) {
+      headers[normalizedName] = value;
+      delete headers[name];
+    }
+  });
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/parseHeaders.js":
+/*!********************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/parseHeaders.js ***!
+  \********************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var utils = __webpack_require__(/*! ./../utils */ "./node_modules/axios/lib/utils.js");
+
+// Headers whose duplicates are ignored by node
+// c.f. https://nodejs.org/api/http.html#http_message_headers
+var ignoreDuplicateOf = [
+  'age', 'authorization', 'content-length', 'content-type', 'etag',
+  'expires', 'from', 'host', 'if-modified-since', 'if-unmodified-since',
+  'last-modified', 'location', 'max-forwards', 'proxy-authorization',
+  'referer', 'retry-after', 'user-agent'
+];
+
+/**
+ * Parse headers into an object
+ *
+ * ```
+ * Date: Wed, 27 Aug 2014 08:58:49 GMT
+ * Content-Type: application/json
+ * Connection: keep-alive
+ * Transfer-Encoding: chunked
+ * ```
+ *
+ * @param {String} headers Headers needing to be parsed
+ * @returns {Object} Headers parsed into an object
+ */
+module.exports = function parseHeaders(headers) {
+  var parsed = {};
+  var key;
+  var val;
+  var i;
+
+  if (!headers) { return parsed; }
+
+  utils.forEach(headers.split('\n'), function parser(line) {
+    i = line.indexOf(':');
+    key = utils.trim(line.substr(0, i)).toLowerCase();
+    val = utils.trim(line.substr(i + 1));
+
+    if (key) {
+      if (parsed[key] && ignoreDuplicateOf.indexOf(key) >= 0) {
+        return;
+      }
+      if (key === 'set-cookie') {
+        parsed[key] = (parsed[key] ? parsed[key] : []).concat([val]);
+      } else {
+        parsed[key] = parsed[key] ? parsed[key] + ', ' + val : val;
+      }
+    }
+  });
+
+  return parsed;
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/helpers/spread.js":
+/*!**************************************************!*\
+  !*** ./node_modules/axios/lib/helpers/spread.js ***!
+  \**************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+/**
+ * Syntactic sugar for invoking a function and expanding an array for arguments.
+ *
+ * Common use case would be to use `Function.prototype.apply`.
+ *
+ *  ```js
+ *  function f(x, y, z) {}
+ *  var args = [1, 2, 3];
+ *  f.apply(null, args);
+ *  ```
+ *
+ * With `spread` this example can be re-written.
+ *
+ *  ```js
+ *  spread(function(x, y, z) {})([1, 2, 3]);
+ *  ```
+ *
+ * @param {Function} callback
+ * @returns {Function}
+ */
+module.exports = function spread(callback) {
+  return function wrap(arr) {
+    return callback.apply(null, arr);
+  };
+};
+
+
+/***/ }),
+
+/***/ "./node_modules/axios/lib/utils.js":
+/*!*****************************************!*\
+  !*** ./node_modules/axios/lib/utils.js ***!
+  \*****************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var bind = __webpack_require__(/*! ./helpers/bind */ "./node_modules/axios/lib/helpers/bind.js");
+
+/*global toString:true*/
+
+// utils is a library of generic helper functions non-specific to axios
+
+var toString = Object.prototype.toString;
+
+/**
+ * Determine if a value is an Array
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an Array, otherwise false
+ */
+function isArray(val) {
+  return toString.call(val) === '[object Array]';
+}
+
+/**
+ * Determine if a value is undefined
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if the value is undefined, otherwise false
+ */
+function isUndefined(val) {
+  return typeof val === 'undefined';
+}
+
+/**
+ * Determine if a value is a Buffer
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Buffer, otherwise false
+ */
+function isBuffer(val) {
+  return val !== null && !isUndefined(val) && val.constructor !== null && !isUndefined(val.constructor)
+    && typeof val.constructor.isBuffer === 'function' && val.constructor.isBuffer(val);
+}
+
+/**
+ * Determine if a value is an ArrayBuffer
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an ArrayBuffer, otherwise false
+ */
+function isArrayBuffer(val) {
+  return toString.call(val) === '[object ArrayBuffer]';
+}
+
+/**
+ * Determine if a value is a FormData
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an FormData, otherwise false
+ */
+function isFormData(val) {
+  return (typeof FormData !== 'undefined') && (val instanceof FormData);
+}
+
+/**
+ * Determine if a value is a view on an ArrayBuffer
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a view on an ArrayBuffer, otherwise false
+ */
+function isArrayBufferView(val) {
+  var result;
+  if ((typeof ArrayBuffer !== 'undefined') && (ArrayBuffer.isView)) {
+    result = ArrayBuffer.isView(val);
+  } else {
+    result = (val) && (val.buffer) && (val.buffer instanceof ArrayBuffer);
+  }
+  return result;
+}
+
+/**
+ * Determine if a value is a String
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a String, otherwise false
+ */
+function isString(val) {
+  return typeof val === 'string';
+}
+
+/**
+ * Determine if a value is a Number
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Number, otherwise false
+ */
+function isNumber(val) {
+  return typeof val === 'number';
+}
+
+/**
+ * Determine if a value is an Object
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is an Object, otherwise false
+ */
+function isObject(val) {
+  return val !== null && typeof val === 'object';
+}
+
+/**
+ * Determine if a value is a plain Object
+ *
+ * @param {Object} val The value to test
+ * @return {boolean} True if value is a plain Object, otherwise false
+ */
+function isPlainObject(val) {
+  if (toString.call(val) !== '[object Object]') {
+    return false;
+  }
+
+  var prototype = Object.getPrototypeOf(val);
+  return prototype === null || prototype === Object.prototype;
+}
+
+/**
+ * Determine if a value is a Date
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Date, otherwise false
+ */
+function isDate(val) {
+  return toString.call(val) === '[object Date]';
+}
+
+/**
+ * Determine if a value is a File
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a File, otherwise false
+ */
+function isFile(val) {
+  return toString.call(val) === '[object File]';
+}
+
+/**
+ * Determine if a value is a Blob
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Blob, otherwise false
+ */
+function isBlob(val) {
+  return toString.call(val) === '[object Blob]';
+}
+
+/**
+ * Determine if a value is a Function
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Function, otherwise false
+ */
+function isFunction(val) {
+  return toString.call(val) === '[object Function]';
+}
+
+/**
+ * Determine if a value is a Stream
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a Stream, otherwise false
+ */
+function isStream(val) {
+  return isObject(val) && isFunction(val.pipe);
+}
+
+/**
+ * Determine if a value is a URLSearchParams object
+ *
+ * @param {Object} val The value to test
+ * @returns {boolean} True if value is a URLSearchParams object, otherwise false
+ */
+function isURLSearchParams(val) {
+  return typeof URLSearchParams !== 'undefined' && val instanceof URLSearchParams;
+}
+
+/**
+ * Trim excess whitespace off the beginning and end of a string
+ *
+ * @param {String} str The String to trim
+ * @returns {String} The String freed of excess whitespace
+ */
+function trim(str) {
+  return str.replace(/^\s*/, '').replace(/\s*$/, '');
+}
+
+/**
+ * Determine if we're running in a standard browser environment
+ *
+ * This allows axios to run in a web worker, and react-native.
+ * Both environments support XMLHttpRequest, but not fully standard globals.
+ *
+ * web workers:
+ *  typeof window -> undefined
+ *  typeof document -> undefined
+ *
+ * react-native:
+ *  navigator.product -> 'ReactNative'
+ * nativescript
+ *  navigator.product -> 'NativeScript' or 'NS'
+ */
+function isStandardBrowserEnv() {
+  if (typeof navigator !== 'undefined' && (navigator.product === 'ReactNative' ||
+                                           navigator.product === 'NativeScript' ||
+                                           navigator.product === 'NS')) {
+    return false;
+  }
+  return (
+    typeof window !== 'undefined' &&
+    typeof document !== 'undefined'
+  );
+}
+
+/**
+ * Iterate over an Array or an Object invoking a function for each item.
+ *
+ * If `obj` is an Array callback will be called passing
+ * the value, index, and complete array for each item.
+ *
+ * If 'obj' is an Object callback will be called passing
+ * the value, key, and complete object for each property.
+ *
+ * @param {Object|Array} obj The object to iterate
+ * @param {Function} fn The callback to invoke for each item
+ */
+function forEach(obj, fn) {
+  // Don't bother if no value provided
+  if (obj === null || typeof obj === 'undefined') {
+    return;
+  }
+
+  // Force an array if not already something iterable
+  if (typeof obj !== 'object') {
+    /*eslint no-param-reassign:0*/
+    obj = [obj];
+  }
+
+  if (isArray(obj)) {
+    // Iterate over array values
+    for (var i = 0, l = obj.length; i < l; i++) {
+      fn.call(null, obj[i], i, obj);
+    }
+  } else {
+    // Iterate over object keys
+    for (var key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        fn.call(null, obj[key], key, obj);
+      }
+    }
+  }
+}
+
+/**
+ * Accepts varargs expecting each argument to be an object, then
+ * immutably merges the properties of each object and returns result.
+ *
+ * When multiple objects contain the same key the later object in
+ * the arguments list will take precedence.
+ *
+ * Example:
+ *
+ * ```js
+ * var result = merge({foo: 123}, {foo: 456});
+ * console.log(result.foo); // outputs 456
+ * ```
+ *
+ * @param {Object} obj1 Object to merge
+ * @returns {Object} Result of all merge properties
+ */
+function merge(/* obj1, obj2, obj3, ... */) {
+  var result = {};
+  function assignValue(val, key) {
+    if (isPlainObject(result[key]) && isPlainObject(val)) {
+      result[key] = merge(result[key], val);
+    } else if (isPlainObject(val)) {
+      result[key] = merge({}, val);
+    } else if (isArray(val)) {
+      result[key] = val.slice();
+    } else {
+      result[key] = val;
+    }
+  }
+
+  for (var i = 0, l = arguments.length; i < l; i++) {
+    forEach(arguments[i], assignValue);
+  }
+  return result;
+}
+
+/**
+ * Extends object a by mutably adding to it the properties of object b.
+ *
+ * @param {Object} a The object to be extended
+ * @param {Object} b The object to copy properties from
+ * @param {Object} thisArg The object to bind function to
+ * @return {Object} The resulting value of object a
+ */
+function extend(a, b, thisArg) {
+  forEach(b, function assignValue(val, key) {
+    if (thisArg && typeof val === 'function') {
+      a[key] = bind(val, thisArg);
+    } else {
+      a[key] = val;
+    }
+  });
+  return a;
+}
+
+/**
+ * Remove byte order marker. This catches EF BB BF (the UTF-8 BOM)
+ *
+ * @param {string} content with BOM
+ * @return {string} content value without BOM
+ */
+function stripBOM(content) {
+  if (content.charCodeAt(0) === 0xFEFF) {
+    content = content.slice(1);
+  }
+  return content;
+}
+
+module.exports = {
+  isArray: isArray,
+  isArrayBuffer: isArrayBuffer,
+  isBuffer: isBuffer,
+  isFormData: isFormData,
+  isArrayBufferView: isArrayBufferView,
+  isString: isString,
+  isNumber: isNumber,
+  isObject: isObject,
+  isPlainObject: isPlainObject,
+  isUndefined: isUndefined,
+  isDate: isDate,
+  isFile: isFile,
+  isBlob: isBlob,
+  isFunction: isFunction,
+  isStream: isStream,
+  isURLSearchParams: isURLSearchParams,
+  isStandardBrowserEnv: isStandardBrowserEnv,
+  forEach: forEach,
+  merge: merge,
+  extend: extend,
+  trim: trim,
+  stripBOM: stripBOM
+};
+
+
+/***/ }),
+
 /***/ "./resources/ts/app.tsx":
 /*!******************************!*\
   !*** ./resources/ts/app.tsx ***!
@@ -110,17 +1943,29 @@ var User_1 = __importDefault(__webpack_require__(/*! ./components/users/User */ 
 
 var NavBar_1 = __importDefault(__webpack_require__(/*! ./components/layouts/NavBar */ "./resources/ts/components/layouts/NavBar.tsx"));
 
-function App() {
+var PostDetail_1 = __importDefault(__webpack_require__(/*! ./components/posts/PostDetail */ "./resources/ts/components/posts/PostDetail.tsx"));
+
+var createPost_1 = __importDefault(__webpack_require__(/*! ./components/posts/createPost */ "./resources/ts/components/posts/createPost.tsx"));
+
+var App = function App() {
   return react_1["default"].createElement(react_router_dom_1.BrowserRouter, null, react_1["default"].createElement("div", null, react_1["default"].createElement(NavBar_1["default"], null), react_1["default"].createElement(react_router_dom_1.Switch, null, react_1["default"].createElement(react_router_dom_1.Route, {
     path: "/posts",
     exact: true,
     component: Posts_1["default"]
   }), react_1["default"].createElement(react_router_dom_1.Route, {
+    path: "/posts/:id",
+    exact: true,
+    component: PostDetail_1["default"]
+  }), react_1["default"].createElement(react_router_dom_1.Route, {
+    path: "/post/create",
+    exact: true,
+    component: createPost_1["default"]
+  }), react_1["default"].createElement(react_router_dom_1.Route, {
     path: "/user",
     exact: true,
     component: User_1["default"]
   }))));
-}
+};
 
 if (document.getElementById('app')) {
   react_dom_1["default"].render(react_1["default"].createElement(App, null), document.getElementById('app'));
@@ -245,10 +2090,337 @@ exports.default = NavBar;
 
 /***/ }),
 
-/***/ "./resources/ts/components/posts/Posts.tsx":
-/*!*************************************************!*\
-  !*** ./resources/ts/components/posts/Posts.tsx ***!
-  \*************************************************/
+/***/ "./resources/ts/components/posts/PostDetail.tsx":
+/*!******************************************************!*\
+  !*** ./resources/ts/components/posts/PostDetail.tsx ***!
+  \******************************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var __createBinding = this && this.__createBinding || (Object.create ? function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  Object.defineProperty(o, k2, {
+    enumerable: true,
+    get: function get() {
+      return m[k];
+    }
+  });
+} : function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  o[k2] = m[k];
+});
+
+var __setModuleDefault = this && this.__setModuleDefault || (Object.create ? function (o, v) {
+  Object.defineProperty(o, "default", {
+    enumerable: true,
+    value: v
+  });
+} : function (o, v) {
+  o["default"] = v;
+});
+
+var __importStar = this && this.__importStar || function (mod) {
+  if (mod && mod.__esModule) return mod;
+  var result = {};
+  if (mod != null) for (var k in mod) {
+    if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+  }
+
+  __setModuleDefault(result, mod);
+
+  return result;
+};
+
+var __awaiter = this && this.__awaiter || function (thisArg, _arguments, P, generator) {
+  function adopt(value) {
+    return value instanceof P ? value : new P(function (resolve) {
+      resolve(value);
+    });
+  }
+
+  return new (P || (P = Promise))(function (resolve, reject) {
+    function fulfilled(value) {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function rejected(value) {
+      try {
+        step(generator["throw"](value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function step(result) {
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    }
+
+    step((generator = generator.apply(thisArg, _arguments || [])).next());
+  });
+};
+
+var __generator = this && this.__generator || function (thisArg, body) {
+  var _ = {
+    label: 0,
+    sent: function sent() {
+      if (t[0] & 1) throw t[1];
+      return t[1];
+    },
+    trys: [],
+    ops: []
+  },
+      f,
+      y,
+      t,
+      g;
+  return g = {
+    next: verb(0),
+    "throw": verb(1),
+    "return": verb(2)
+  }, typeof Symbol === "function" && (g[Symbol.iterator] = function () {
+    return this;
+  }), g;
+
+  function verb(n) {
+    return function (v) {
+      return step([n, v]);
+    };
+  }
+
+  function step(op) {
+    if (f) throw new TypeError("Generator is already executing.");
+
+    while (_) {
+      try {
+        if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+        if (y = 0, t) op = [op[0] & 2, t.value];
+
+        switch (op[0]) {
+          case 0:
+          case 1:
+            t = op;
+            break;
+
+          case 4:
+            _.label++;
+            return {
+              value: op[1],
+              done: false
+            };
+
+          case 5:
+            _.label++;
+            y = op[1];
+            op = [0];
+            continue;
+
+          case 7:
+            op = _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+
+          default:
+            if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) {
+              _ = 0;
+              continue;
+            }
+
+            if (op[0] === 3 && (!t || op[1] > t[0] && op[1] < t[3])) {
+              _.label = op[1];
+              break;
+            }
+
+            if (op[0] === 6 && _.label < t[1]) {
+              _.label = t[1];
+              t = op;
+              break;
+            }
+
+            if (t && _.label < t[2]) {
+              _.label = t[2];
+
+              _.ops.push(op);
+
+              break;
+            }
+
+            if (t[2]) _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+        }
+
+        op = body.call(thisArg, _);
+      } catch (e) {
+        op = [6, e];
+        y = 0;
+      } finally {
+        f = t = 0;
+      }
+    }
+
+    if (op[0] & 5) throw op[1];
+    return {
+      value: op[0] ? op[1] : void 0,
+      done: true
+    };
+  }
+};
+
+var __importDefault = this && this.__importDefault || function (mod) {
+  return mod && mod.__esModule ? mod : {
+    "default": mod
+  };
+};
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+
+var react_1 = __importStar(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var axios_1 = __importDefault(__webpack_require__(/*! axios */ "./node_modules/axios/index.js"));
+
+var PostDetail = function PostDetail(props) {
+  var id = props.match.params.id;
+
+  var _a = react_1.useState({
+    title: "",
+    body: "",
+    created_at: "",
+    category: ""
+  }),
+      postDetail = _a[0],
+      setPostDetail = _a[1];
+
+  react_1.useEffect(function () {
+    getPostDetail();
+  }, []);
+
+  var getPostDetail = function getPostDetail() {
+    return __awaiter(void 0, void 0, void 0, function () {
+      var response;
+      return __generator(this, function (_a) {
+        switch (_a.label) {
+          case 0:
+            return [4
+            /*yield*/
+            , axios_1["default"].get("posts/" + id)];
+
+          case 1:
+            response = _a.sent();
+            setPostDetail(response.data.data);
+            return [2
+            /*return*/
+            ];
+        }
+      });
+    });
+  };
+
+  var prev = function prev() {
+    var prevId = parseInt(props.match.params.id) - 1;
+    window.location.href = "/posts/" + prevId;
+  };
+
+  var next = function next() {
+    var nextId = parseInt(props.match.params.id) + 1;
+    window.location.href = "/posts/" + nextId;
+  };
+
+  return react_1["default"].createElement("main", {
+    role: "main",
+    className: "container"
+  }, react_1["default"].createElement("div", {
+    className: "row"
+  }, react_1["default"].createElement("div", {
+    className: "col-md-8 blog-main"
+  }, react_1["default"].createElement("h3", {
+    className: "pb-3 mb-4 font-italic border-bottom"
+  }, "From the Firehose"), react_1["default"].createElement("div", {
+    className: "blog-post"
+  }, react_1["default"].createElement("h2", {
+    className: "blog-post-title"
+  }, postDetail.title), react_1["default"].createElement("p", {
+    className: "blog-post-meta"
+  }, postDetail.created_at), react_1["default"].createElement("hr", null), react_1["default"].createElement("p", null, postDetail.body)), react_1["default"].createElement("nav", {
+    className: "blog-pagination"
+  }, react_1["default"].createElement("a", {
+    className: "btn btn-outline-primary",
+    href: "#"
+  }, "\u53E4\u3044\u8A18\u4E8B"), react_1["default"].createElement("a", {
+    className: "btn btn-outline-secondary disabled",
+    href: "#"
+  }, "\u65B0\u3057\u3044\u8A18\u4E8B"))), react_1["default"].createElement("aside", {
+    className: "col-md-4 blog-sidebar"
+  }, react_1["default"].createElement("div", {
+    className: "p-3 mb-3 bg-light rounded"
+  }, react_1["default"].createElement("h4", {
+    className: "font-italic"
+  }, "\u30D6\u30ED\u30B0\u306B\u3064\u3044\u3066"), react_1["default"].createElement("p", {
+    className: "mb-0"
+  }, "\u543E\u8F29\u306F\u732B\u3067\u3042\u308B\u3002\u540D\u524D\u306F\u307E\u3060\u7121\u3044\u3002\u3069\u3053\u3067\u751F\u308C\u305F\u304B\u3068\u3093\u3068\u898B\u5F53\u304C\u3064\u304B\u306C\u3002\u4F55\u3067\u3082", react_1["default"].createElement("em", null, "\u8584\u6697\u3044\u3058\u3081\u3058\u3081\u3057\u305F\u6240\u3067"), "\u30CB\u30E3\u30FC\u30CB\u30E3\u30FC\u6CE3\u3044\u3066\u3044\u305F\u4E8B\u3060\u3051\u306F\u8A18\u61B6\u3057\u3066\u3044\u308B\u3002")), react_1["default"].createElement("div", {
+    className: "p-3"
+  }, react_1["default"].createElement("h4", {
+    className: "font-italic"
+  }, "\u30A2\u30FC\u30AB\u30A4\u30D6"), react_1["default"].createElement("ol", {
+    className: "list-unstyled mb-0"
+  }, react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2014/03")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2014/02")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2014/01")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/12")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/11")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/10")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/09")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/08")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/07")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/06")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/05")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "2013/04")))), react_1["default"].createElement("div", {
+    className: "p-3"
+  }, react_1["default"].createElement("h4", {
+    className: "font-italic"
+  }, "SNS"), react_1["default"].createElement("ol", {
+    className: "list-unstyled"
+  }, react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "GitHub")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "Twitter")), react_1["default"].createElement("li", null, react_1["default"].createElement("a", {
+    href: "#"
+  }, "Facebook")))))));
+};
+
+exports.default = PostDetail;
+
+/***/ }),
+
+/***/ "./resources/ts/components/posts/PostView.tsx":
+/*!****************************************************!*\
+  !*** ./resources/ts/components/posts/PostView.tsx ***!
+  \****************************************************/
 /***/ (function(__unused_webpack_module, exports, __webpack_require__) {
 
 "use strict";
@@ -266,11 +2438,619 @@ Object.defineProperty(exports, "__esModule", ({
 
 var react_1 = __importDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
 
-function Posts() {
-  return react_1["default"].createElement("h1", null, "Posts Page");
-}
+var PostView = function PostView(props) {
+  var truncate = function truncate(str, len) {
+    return str.length <= len ? str : str.substr(0, len) + "...";
+  };
+
+  return react_1["default"].createElement("div", {
+    className: "card mr-4 mb-4 shadow-sm"
+  }, react_1["default"].createElement("img", {
+    className: "card-img-top",
+    "data-src": "holder.js/100px225?theme=thumb&bg=55595c&fg=eceeef&text=Thumbnail",
+    alt: "Thumbnail [100%x225]",
+    src: "data:image/svg+xml;charset=UTF-8,%3Csvg%20width%3D%22348%22%20height%3D%22225%22%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20348%20225%22%20preserveAspectRatio%3D%22none%22%3E%3Cdefs%3E%3Cstyle%20type%3D%22text%2Fcss%22%3E%23holder_17715b15616%20text%20%7B%20fill%3A%23eceeef%3Bfont-weight%3Abold%3Bfont-family%3AArial%2C%20Helvetica%2C%20Open%20Sans%2C%20sans-serif%2C%20monospace%3Bfont-size%3A17pt%20%7D%20%3C%2Fstyle%3E%3C%2Fdefs%3E%3Cg%20id%3D%22holder_17715b15616%22%3E%3Crect%20width%3D%22348%22%20height%3D%22225%22%20fill%3D%22%2355595c%22%3E%3C%2Frect%3E%3Cg%3E%3Ctext%20x%3D%22116.71875%22%20y%3D%22120.3%22%3EThumbnail%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fg%3E%3C%2Fsvg%3E",
+    "data-holder-rendered": "true"
+  }), react_1["default"].createElement("div", {
+    className: "card-body"
+  }, react_1["default"].createElement("p", {
+    className: "card-text"
+  }, props.post.title), react_1["default"].createElement("p", {
+    className: "card-text"
+  }, truncate(props.post.body, 20)), react_1["default"].createElement("div", {
+    className: "d-flex justify-content-between align-items-center"
+  }, react_1["default"].createElement("div", {
+    className: "btn-group"
+  }, react_1["default"].createElement("button", {
+    type: "button",
+    className: "btn btn-sm btn-outline-secondary"
+  }, react_1["default"].createElement("a", {
+    href: "/posts/" + props.post.id
+  }, "\u898B\u308B")), react_1["default"].createElement("button", {
+    type: "button",
+    className: "btn btn-sm btn-outline-secondary"
+  }, react_1["default"].createElement("a", {
+    href: ""
+  }, "\u7DE8\u96C6"))), react_1["default"].createElement("small", {
+    className: "text-muted"
+  }, props.post.created_at))));
+};
+
+exports.default = PostView;
+
+/***/ }),
+
+/***/ "./resources/ts/components/posts/Posts.tsx":
+/*!*************************************************!*\
+  !*** ./resources/ts/components/posts/Posts.tsx ***!
+  \*************************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var __createBinding = this && this.__createBinding || (Object.create ? function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  Object.defineProperty(o, k2, {
+    enumerable: true,
+    get: function get() {
+      return m[k];
+    }
+  });
+} : function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  o[k2] = m[k];
+});
+
+var __setModuleDefault = this && this.__setModuleDefault || (Object.create ? function (o, v) {
+  Object.defineProperty(o, "default", {
+    enumerable: true,
+    value: v
+  });
+} : function (o, v) {
+  o["default"] = v;
+});
+
+var __importStar = this && this.__importStar || function (mod) {
+  if (mod && mod.__esModule) return mod;
+  var result = {};
+  if (mod != null) for (var k in mod) {
+    if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+  }
+
+  __setModuleDefault(result, mod);
+
+  return result;
+};
+
+var __awaiter = this && this.__awaiter || function (thisArg, _arguments, P, generator) {
+  function adopt(value) {
+    return value instanceof P ? value : new P(function (resolve) {
+      resolve(value);
+    });
+  }
+
+  return new (P || (P = Promise))(function (resolve, reject) {
+    function fulfilled(value) {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function rejected(value) {
+      try {
+        step(generator["throw"](value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function step(result) {
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    }
+
+    step((generator = generator.apply(thisArg, _arguments || [])).next());
+  });
+};
+
+var __generator = this && this.__generator || function (thisArg, body) {
+  var _ = {
+    label: 0,
+    sent: function sent() {
+      if (t[0] & 1) throw t[1];
+      return t[1];
+    },
+    trys: [],
+    ops: []
+  },
+      f,
+      y,
+      t,
+      g;
+  return g = {
+    next: verb(0),
+    "throw": verb(1),
+    "return": verb(2)
+  }, typeof Symbol === "function" && (g[Symbol.iterator] = function () {
+    return this;
+  }), g;
+
+  function verb(n) {
+    return function (v) {
+      return step([n, v]);
+    };
+  }
+
+  function step(op) {
+    if (f) throw new TypeError("Generator is already executing.");
+
+    while (_) {
+      try {
+        if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+        if (y = 0, t) op = [op[0] & 2, t.value];
+
+        switch (op[0]) {
+          case 0:
+          case 1:
+            t = op;
+            break;
+
+          case 4:
+            _.label++;
+            return {
+              value: op[1],
+              done: false
+            };
+
+          case 5:
+            _.label++;
+            y = op[1];
+            op = [0];
+            continue;
+
+          case 7:
+            op = _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+
+          default:
+            if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) {
+              _ = 0;
+              continue;
+            }
+
+            if (op[0] === 3 && (!t || op[1] > t[0] && op[1] < t[3])) {
+              _.label = op[1];
+              break;
+            }
+
+            if (op[0] === 6 && _.label < t[1]) {
+              _.label = t[1];
+              t = op;
+              break;
+            }
+
+            if (t && _.label < t[2]) {
+              _.label = t[2];
+
+              _.ops.push(op);
+
+              break;
+            }
+
+            if (t[2]) _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+        }
+
+        op = body.call(thisArg, _);
+      } catch (e) {
+        op = [6, e];
+        y = 0;
+      } finally {
+        f = t = 0;
+      }
+    }
+
+    if (op[0] & 5) throw op[1];
+    return {
+      value: op[0] ? op[1] : void 0,
+      done: true
+    };
+  }
+};
+
+var __importDefault = this && this.__importDefault || function (mod) {
+  return mod && mod.__esModule ? mod : {
+    "default": mod
+  };
+};
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+
+var react_1 = __importStar(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+var axios_1 = __importDefault(__webpack_require__(/*! axios */ "./node_modules/axios/index.js"));
+
+var PostView_1 = __importDefault(__webpack_require__(/*! ./PostView */ "./resources/ts/components/posts/PostView.tsx"));
+
+axios_1["default"].defaults.baseURL = 'https://sakuton.test/api';
+
+var Posts = function Posts() {
+  var _a = react_1.useState([{
+    id: 1,
+    title: "",
+    body: ""
+  }]),
+      posts = _a[0],
+      setPosts = _a[1];
+
+  react_1.useEffect(function () {
+    getPosts();
+  }, []);
+
+  var getPosts = function getPosts() {
+    return __awaiter(void 0, void 0, void 0, function () {
+      var response;
+      return __generator(this, function (_a) {
+        switch (_a.label) {
+          case 0:
+            return [4
+            /*yield*/
+            , axios_1["default"].get('posts')];
+
+          case 1:
+            response = _a.sent();
+            setPosts(response.data.data);
+            return [2
+            /*return*/
+            ];
+        }
+      });
+    });
+  };
+
+  return react_1["default"].createElement("div", {
+    className: "album py-5 bg-light"
+  }, react_1["default"].createElement("div", {
+    className: "container"
+  }, react_1["default"].createElement("div", {
+    className: "row"
+  }, posts.map(function (post) {
+    return react_1["default"].createElement(PostView_1["default"], {
+      post: post
+    });
+  }))));
+};
 
 exports.default = Posts;
+
+/***/ }),
+
+/***/ "./resources/ts/components/posts/createPost.tsx":
+/*!******************************************************!*\
+  !*** ./resources/ts/components/posts/createPost.tsx ***!
+  \******************************************************/
+/***/ (function(__unused_webpack_module, exports, __webpack_require__) {
+
+"use strict";
+
+
+var __createBinding = this && this.__createBinding || (Object.create ? function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  Object.defineProperty(o, k2, {
+    enumerable: true,
+    get: function get() {
+      return m[k];
+    }
+  });
+} : function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  o[k2] = m[k];
+});
+
+var __setModuleDefault = this && this.__setModuleDefault || (Object.create ? function (o, v) {
+  Object.defineProperty(o, "default", {
+    enumerable: true,
+    value: v
+  });
+} : function (o, v) {
+  o["default"] = v;
+});
+
+var __importStar = this && this.__importStar || function (mod) {
+  if (mod && mod.__esModule) return mod;
+  var result = {};
+  if (mod != null) for (var k in mod) {
+    if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+  }
+
+  __setModuleDefault(result, mod);
+
+  return result;
+};
+
+var __awaiter = this && this.__awaiter || function (thisArg, _arguments, P, generator) {
+  function adopt(value) {
+    return value instanceof P ? value : new P(function (resolve) {
+      resolve(value);
+    });
+  }
+
+  return new (P || (P = Promise))(function (resolve, reject) {
+    function fulfilled(value) {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function rejected(value) {
+      try {
+        step(generator["throw"](value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function step(result) {
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    }
+
+    step((generator = generator.apply(thisArg, _arguments || [])).next());
+  });
+};
+
+var __generator = this && this.__generator || function (thisArg, body) {
+  var _ = {
+    label: 0,
+    sent: function sent() {
+      if (t[0] & 1) throw t[1];
+      return t[1];
+    },
+    trys: [],
+    ops: []
+  },
+      f,
+      y,
+      t,
+      g;
+  return g = {
+    next: verb(0),
+    "throw": verb(1),
+    "return": verb(2)
+  }, typeof Symbol === "function" && (g[Symbol.iterator] = function () {
+    return this;
+  }), g;
+
+  function verb(n) {
+    return function (v) {
+      return step([n, v]);
+    };
+  }
+
+  function step(op) {
+    if (f) throw new TypeError("Generator is already executing.");
+
+    while (_) {
+      try {
+        if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+        if (y = 0, t) op = [op[0] & 2, t.value];
+
+        switch (op[0]) {
+          case 0:
+          case 1:
+            t = op;
+            break;
+
+          case 4:
+            _.label++;
+            return {
+              value: op[1],
+              done: false
+            };
+
+          case 5:
+            _.label++;
+            y = op[1];
+            op = [0];
+            continue;
+
+          case 7:
+            op = _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+
+          default:
+            if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) {
+              _ = 0;
+              continue;
+            }
+
+            if (op[0] === 3 && (!t || op[1] > t[0] && op[1] < t[3])) {
+              _.label = op[1];
+              break;
+            }
+
+            if (op[0] === 6 && _.label < t[1]) {
+              _.label = t[1];
+              t = op;
+              break;
+            }
+
+            if (t && _.label < t[2]) {
+              _.label = t[2];
+
+              _.ops.push(op);
+
+              break;
+            }
+
+            if (t[2]) _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+        }
+
+        op = body.call(thisArg, _);
+      } catch (e) {
+        op = [6, e];
+        y = 0;
+      } finally {
+        f = t = 0;
+      }
+    }
+
+    if (op[0] & 5) throw op[1];
+    return {
+      value: op[0] ? op[1] : void 0,
+      done: true
+    };
+  }
+};
+
+var __importDefault = this && this.__importDefault || function (mod) {
+  return mod && mod.__esModule ? mod : {
+    "default": mod
+  };
+};
+
+Object.defineProperty(exports, "__esModule", ({
+  value: true
+}));
+
+var react_1 = __importStar(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+
+__webpack_require__(/*! ./css/form.css */ "./resources/ts/components/posts/css/form.css");
+
+var axios_1 = __importDefault(__webpack_require__(/*! axios */ "./node_modules/axios/index.js"));
+
+var react_hook_form_1 = __webpack_require__(/*! react-hook-form */ "./node_modules/react-hook-form/dist/index.js");
+
+var CreatePost = function CreatePost() {
+  var _a = react_1.useState(""),
+      title = _a[0],
+      setTitle = _a[1];
+
+  var _b = react_1.useState(""),
+      body = _b[0],
+      setBody = _b[1];
+
+  var _c = react_1.useState(''),
+      category_id = _c[0],
+      setCategoryId = _c[1];
+
+  var _d = react_hook_form_1.useForm(),
+      register = _d.register,
+      handleSubmit = _d.handleSubmit,
+      errors = _d.errors,
+      reset = _d.reset;
+
+  var _e = react_1.useState(false),
+      isRedirect = _e[0],
+      setIsRedirect = _e[1];
+
+  react_1.useEffect(function () {
+    postBlog;
+  }, []);
+
+  var postBlog = function postBlog(e) {
+    return __awaiter(void 0, void 0, void 0, function () {
+      return __generator(this, function (_a) {
+        switch (_a.label) {
+          case 0:
+            e.preventDefault();
+            return [4
+            /*yield*/
+            , axios_1["default"].post('posts', {
+              title: title,
+              body: body,
+              category_id: category_id
+            }).then(function () {
+              location.href = '/posts';
+            })];
+
+          case 1:
+            _a.sent();
+
+            setIsRedirect(true);
+            return [2
+            /*return*/
+            ];
+        }
+      });
+    });
+  };
+
+  return react_1["default"].createElement("div", {
+    className: "flex flex-col flex-1"
+  }, react_1["default"].createElement("form", {
+    onSubmit: postBlog
+  }, react_1["default"].createElement("main", {
+    className: "h-full pb-16 overflow-y-auto"
+  }, react_1["default"].createElement("div", {
+    className: "container px-6 mx-auto grid"
+  }, react_1["default"].createElement("h4", {
+    className: "mb-4 text-lg font-semibold text-gray-600 dark:text-gray-300"
+  }, "Elements"), react_1["default"].createElement("div", {
+    className: "px-4 py-3 mb-8 bg-white rounded-lg shadow-md dark:bg-gray-800"
+  }, react_1["default"].createElement("label", {
+    className: "block text-sm"
+  }, react_1["default"].createElement("span", {
+    className: "text-gray-700 dark:text-gray-400"
+  }, "Title"), react_1["default"].createElement("input", {
+    type: "text",
+    onChange: function onChange(e) {
+      return setTitle(e.target.value);
+    },
+    ref: register({
+      required: 'タイトルは必ず入力して下さい'
+    }),
+    className: 'error block w-full mt-1 text-sm dark:border-gray-600 dark:bg-gray-700 focus:border-purple-400 focus:outline-none focus:shadow-outline-purple dark:text-gray-300 dark:focus:shadow-outline-gray form-input',
+    placeholder: "Jane Doe"
+  })), react_1["default"].createElement("label", {
+    className: "block text-sm"
+  }, react_1["default"].createElement("span", {
+    className: "text-gray-700 dark:text-gray-400"
+  }, "Category"), react_1["default"].createElement("input", {
+    onChange: function onChange(e) {
+      return setCategoryId(e.target.value);
+    },
+    className: "block w-full mt-1 text-sm dark:border-gray-600 dark:bg-gray-700 focus:border-purple-400 focus:outline-none focus:shadow-outline-purple dark:text-gray-300 dark:focus:shadow-outline-gray form-input",
+    placeholder: "Jane Doe"
+  })), react_1["default"].createElement("label", {
+    className: "block mt-4 text-sm"
+  }, react_1["default"].createElement("span", {
+    className: "text-gray-700 dark:text-gray-400"
+  }, "body"), react_1["default"].createElement("textarea", {
+    onChange: function onChange(e) {
+      return setBody(e.target.value);
+    },
+    rows: 10,
+    className: "block w-full mt-1 text-sm dark:text-gray-300 dark:border-gray-600 dark:bg-gray-700 form-textarea focus:border-purple-400 focus:outline-none focus:shadow-outline-purple dark:focus:shadow-outline-gray",
+    placeholder: "Enter some long form content."
+  })), react_1["default"].createElement("button", {
+    className: "flex items-center justify-between p-4 mb-3 mt-3 text-sm font-semibold text-purple-100 bg-purple-600 rounded-lg shadow-md focus:outline-none focus:shadow-outline-purple"
+  }, react_1["default"].createElement("div", {
+    className: "flex items-center"
+  }, react_1["default"].createElement("span", {
+    className: "text-center"
+  }, "\u6295\u7A3F\u3059\u308B"))))))));
+};
+
+exports.default = CreatePost;
 
 /***/ }),
 
@@ -283,6 +3063,183 @@ exports.default = Posts;
 "use strict";
 
 
+var __createBinding = this && this.__createBinding || (Object.create ? function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  Object.defineProperty(o, k2, {
+    enumerable: true,
+    get: function get() {
+      return m[k];
+    }
+  });
+} : function (o, m, k, k2) {
+  if (k2 === undefined) k2 = k;
+  o[k2] = m[k];
+});
+
+var __setModuleDefault = this && this.__setModuleDefault || (Object.create ? function (o, v) {
+  Object.defineProperty(o, "default", {
+    enumerable: true,
+    value: v
+  });
+} : function (o, v) {
+  o["default"] = v;
+});
+
+var __importStar = this && this.__importStar || function (mod) {
+  if (mod && mod.__esModule) return mod;
+  var result = {};
+  if (mod != null) for (var k in mod) {
+    if (k !== "default" && Object.prototype.hasOwnProperty.call(mod, k)) __createBinding(result, mod, k);
+  }
+
+  __setModuleDefault(result, mod);
+
+  return result;
+};
+
+var __awaiter = this && this.__awaiter || function (thisArg, _arguments, P, generator) {
+  function adopt(value) {
+    return value instanceof P ? value : new P(function (resolve) {
+      resolve(value);
+    });
+  }
+
+  return new (P || (P = Promise))(function (resolve, reject) {
+    function fulfilled(value) {
+      try {
+        step(generator.next(value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function rejected(value) {
+      try {
+        step(generator["throw"](value));
+      } catch (e) {
+        reject(e);
+      }
+    }
+
+    function step(result) {
+      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    }
+
+    step((generator = generator.apply(thisArg, _arguments || [])).next());
+  });
+};
+
+var __generator = this && this.__generator || function (thisArg, body) {
+  var _ = {
+    label: 0,
+    sent: function sent() {
+      if (t[0] & 1) throw t[1];
+      return t[1];
+    },
+    trys: [],
+    ops: []
+  },
+      f,
+      y,
+      t,
+      g;
+  return g = {
+    next: verb(0),
+    "throw": verb(1),
+    "return": verb(2)
+  }, typeof Symbol === "function" && (g[Symbol.iterator] = function () {
+    return this;
+  }), g;
+
+  function verb(n) {
+    return function (v) {
+      return step([n, v]);
+    };
+  }
+
+  function step(op) {
+    if (f) throw new TypeError("Generator is already executing.");
+
+    while (_) {
+      try {
+        if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+        if (y = 0, t) op = [op[0] & 2, t.value];
+
+        switch (op[0]) {
+          case 0:
+          case 1:
+            t = op;
+            break;
+
+          case 4:
+            _.label++;
+            return {
+              value: op[1],
+              done: false
+            };
+
+          case 5:
+            _.label++;
+            y = op[1];
+            op = [0];
+            continue;
+
+          case 7:
+            op = _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+
+          default:
+            if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) {
+              _ = 0;
+              continue;
+            }
+
+            if (op[0] === 3 && (!t || op[1] > t[0] && op[1] < t[3])) {
+              _.label = op[1];
+              break;
+            }
+
+            if (op[0] === 6 && _.label < t[1]) {
+              _.label = t[1];
+              t = op;
+              break;
+            }
+
+            if (t && _.label < t[2]) {
+              _.label = t[2];
+
+              _.ops.push(op);
+
+              break;
+            }
+
+            if (t[2]) _.ops.pop();
+
+            _.trys.pop();
+
+            continue;
+        }
+
+        op = body.call(thisArg, _);
+      } catch (e) {
+        op = [6, e];
+        y = 0;
+      } finally {
+        f = t = 0;
+      }
+    }
+
+    if (op[0] & 5) throw op[1];
+    return {
+      value: op[0] ? op[1] : void 0,
+      done: true
+    };
+  }
+};
+
 var __importDefault = this && this.__importDefault || function (mod) {
   return mod && mod.__esModule ? mod : {
     "default": mod
@@ -293,13 +3250,237 @@ Object.defineProperty(exports, "__esModule", ({
   value: true
 }));
 
-var react_1 = __importDefault(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
+var react_1 = __importStar(__webpack_require__(/*! react */ "./node_modules/react/index.js"));
 
-function User() {
-  return react_1["default"].createElement("h1", null, "User page");
-}
+var axios_1 = __importDefault(__webpack_require__(/*! axios */ "./node_modules/axios/index.js"));
+
+axios_1["default"].defaults.baseURL = 'https://sakuton.test/api';
+
+__webpack_require__(/*! ./css/user.css */ "./resources/ts/components/users/css/user.css");
+
+var User = function User() {
+  var _a = react_1.useState({
+    id: 1,
+    name: "",
+    image: "",
+    email: "",
+    location: "",
+    introduction: "",
+    github: ""
+  }),
+      user = _a[0],
+      setUser = _a[1];
+
+  react_1.useEffect(function () {
+    getUser();
+  }, []);
+
+  var getUser = function getUser() {
+    return __awaiter(void 0, void 0, void 0, function () {
+      var response, data;
+      return __generator(this, function (_a) {
+        switch (_a.label) {
+          case 0:
+            return [4
+            /*yield*/
+            , axios_1["default"].get('user')];
+
+          case 1:
+            response = _a.sent();
+            data = response.data.data;
+            setUser(data);
+            return [2
+            /*return*/
+            ];
+        }
+      });
+    });
+  };
+
+  return react_1["default"].createElement("div", {
+    className: "max-w-4xl flex items-center h-auto lg:h-screen flex-wrap mx-auto my-32 lg:my-0"
+  }, react_1["default"].createElement("div", {
+    id: "profile",
+    className: "w-full lg:w-3/5 rounded-lg lg:rounded-l-lg lg:rounded-r-none shadow-2xl bg-white opacity-75 mx-6 lg:mx-0"
+  }, react_1["default"].createElement("div", {
+    className: "p-4 md:p-12 text-center lg:text-left"
+  }, react_1["default"].createElement("h1", {
+    className: "text-3xl font-bold pt-8 lg:pt-0"
+  }, user.name), react_1["default"].createElement("div", {
+    className: "mx-auto lg:mx-0 w-4/5 pt-3 border-b-2 border-green-500 opacity-25"
+  }), react_1["default"].createElement("p", {
+    className: "pt-4 text-base font-bold flex items-center justify-center lg:justify-start"
+  }, react_1["default"].createElement("svg", {
+    className: "h-4 fill-current text-green-700 pr-4",
+    xmlns: "http://www.w3.org/2000/svg",
+    viewBox: "0 0 20 20"
+  }, react_1["default"].createElement("path", {
+    d: "M9 12H1v6a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-6h-8v2H9v-2zm0-1H0V5c0-1.1.9-2 2-2h4V2a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v1h4a2 2 0 0 1 2 2v6h-9V9H9v2zm3-8V2H8v1h4z"
+  })), user.email), react_1["default"].createElement("p", {
+    className: "pt-2 text-gray-600 text-xs lg:text-sm flex items-center justify-center lg:justify-start"
+  }, react_1["default"].createElement("svg", {
+    className: "h-4 fill-current text-green-700 pr-4",
+    xmlns: "http://www.w3.org/2000/svg",
+    viewBox: "0 0 20 20"
+  }, react_1["default"].createElement("path", {
+    d: "M10 20a10 10 0 1 1 0-20 10 10 0 0 1 0 20zm7.75-8a8.01 8.01 0 0 0 0-4h-3.82a28.81 28.81 0 0 1 0 4h3.82zm-.82 2h-3.22a14.44 14.44 0 0 1-.95 3.51A8.03 8.03 0 0 0 16.93 14zm-8.85-2h3.84a24.61 24.61 0 0 0 0-4H8.08a24.61 24.61 0 0 0 0 4zm.25 2c.41 2.4 1.13 4 1.67 4s1.26-1.6 1.67-4H8.33zm-6.08-2h3.82a28.81 28.81 0 0 1 0-4H2.25a8.01 8.01 0 0 0 0 4zm.82 2a8.03 8.03 0 0 0 4.17 3.51c-.42-.96-.74-2.16-.95-3.51H3.07zm13.86-8a8.03 8.03 0 0 0-4.17-3.51c.42.96.74 2.16.95 3.51h3.22zm-8.6 0h3.34c-.41-2.4-1.13-4-1.67-4S8.74 3.6 8.33 6zM3.07 6h3.22c.2-1.35.53-2.55.95-3.51A8.03 8.03 0 0 0 3.07 6z"
+  })), user.location), react_1["default"].createElement("p", {
+    className: "pt-8 text-sm"
+  }, user.introduction), react_1["default"].createElement("div", {
+    className: "pt-12 pb-8"
+  }, react_1["default"].createElement("button", {
+    className: "bg-green-700 hover:bg-green-900 text-white font-bold py-2 px-4 rounded-full"
+  }, "Get In Touch")), react_1["default"].createElement("div", {
+    className: "mt-6 pb-16 lg:pb-0 w-4/5 lg:w-full mx-auto flex flex-wrap items-center justify-between"
+  }, react_1["default"].createElement("a", {
+    className: "link",
+    href: user.github,
+    "data-tippy-content": "@github_handle",
+    target: "_blank"
+  }, react_1["default"].createElement("svg", {
+    className: "h-6 fill-current text-gray-600 hover:text-green-700",
+    role: "img",
+    viewBox: "0 0 24 24",
+    xmlns: "http://www.w3.org/2000/svg"
+  }, react_1["default"].createElement("title", null, "GitHub"), react_1["default"].createElement("path", {
+    d: "M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"
+  })))))), react_1["default"].createElement("div", {
+    className: "w-full lg:w-2/5"
+  }, react_1["default"].createElement("img", {
+    src: user.image,
+    className: "rounded-none lg:rounded-lg shadow-2xl hidden lg:block img-height"
+  })), react_1["default"].createElement("div", {
+    className: "absolute top-0 right-0 h-12 w-18 p-4"
+  }, react_1["default"].createElement("button", {
+    className: "js-change-theme focus:outline-none"
+  }, "\uD83C\uDF19")));
+};
 
 exports.default = User;
+
+/***/ }),
+
+/***/ "./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!./node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./resources/ts/components/posts/css/form.css":
+/*!**************************************************************************************************************************************************************************************************************!*\
+  !*** ./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!./node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./resources/ts/components/posts/css/form.css ***!
+  \**************************************************************************************************************************************************************************************************************/
+/***/ ((module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => __WEBPACK_DEFAULT_EXPORT__
+/* harmony export */ });
+/* harmony import */ var _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../../../../../node_modules/css-loader/dist/runtime/api.js */ "./node_modules/css-loader/dist/runtime/api.js");
+/* harmony import */ var _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0__);
+// Imports
+
+var ___CSS_LOADER_EXPORT___ = _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0___default()(function(i){return i[1]});
+// Module
+___CSS_LOADER_EXPORT___.push([module.id, "/*! normalize.css v8.0.1 | MIT License | github.com/necolas/normalize.css */\nhtml {\n    line-height: 1.15;\n    -webkit-text-size-adjust: 100%\n}\n\nbody {\n    margin: 0\n}\n\nmain {\n    display: block\n}\n\nh1 {\n    font-size: 2em;\n    margin: .67em 0\n}\n\nhr {\n    box-sizing: content-box;\n    height: 0;\n    overflow: visible\n}\n\npre {\n    font-family: monospace, monospace;\n    font-size: 1em\n}\n\na {\n    background-color: transparent\n}\n\nabbr[title] {\n    border-bottom: none;\n    text-decoration: underline;\n    -webkit-text-decoration: underline dotted;\n    text-decoration: underline dotted\n}\n\nb, strong {\n    font-weight: bolder\n}\n\ncode, kbd, samp {\n    font-family: monospace, monospace;\n    font-size: 1em\n}\n\nsmall {\n    font-size: 80%\n}\n\nsub, sup {\n    font-size: 75%;\n    line-height: 0;\n    position: relative;\n    vertical-align: baseline\n}\n\nsub {\n    bottom: -.25em\n}\n\nsup {\n    top: -.5em\n}\n\nimg {\n    border-style: none\n}\n\nbutton, input, optgroup, select, textarea {\n    font-family: inherit;\n    font-size: 100%;\n    line-height: 1.15;\n    margin: 0\n}\n\nbutton, input {\n    overflow: visible\n}\n\nbutton, select {\n    text-transform: none\n}\n\n[type=button], [type=reset], [type=submit], button {\n    -webkit-appearance: button\n}\n\n[type=button]::-moz-focus-inner, [type=reset]::-moz-focus-inner, [type=submit]::-moz-focus-inner, button::-moz-focus-inner {\n    border-style: none;\n    padding: 0\n}\n\n[type=button]:-moz-focusring, [type=reset]:-moz-focusring, [type=submit]:-moz-focusring, button:-moz-focusring {\n    outline: 1px dotted ButtonText\n}\n\nfieldset {\n    padding: .35em .75em .625em\n}\n\nlegend {\n    box-sizing: border-box;\n    color: inherit;\n    display: table;\n    max-width: 100%;\n    padding: 0;\n    white-space: normal\n}\n\nprogress {\n    vertical-align: baseline\n}\n\ntextarea {\n    overflow: auto\n}\n\n[type=checkbox], [type=radio] {\n    box-sizing: border-box;\n    padding: 0\n}\n\n[type=number]::-webkit-inner-spin-button, [type=number]::-webkit-outer-spin-button {\n    height: auto\n}\n\n[type=search] {\n    -webkit-appearance: textfield;\n    outline-offset: -2px\n}\n\n[type=search]::-webkit-search-decoration {\n    -webkit-appearance: none\n}\n\n::-webkit-file-upload-button {\n    -webkit-appearance: button;\n    font: inherit\n}\n\ndetails {\n    display: block\n}\n\nsummary {\n    display: list-item\n}\n\n[hidden], template {\n    display: none\n}\n\nblockquote, dd, dl, figure, h1, h2, h3, h4, h5, h6, hr, p, pre {\n    margin: 0\n}\n\nbutton {\n    background-color: transparent;\n    background-image: none;\n    padding: 0\n}\n\nbutton:focus {\n    outline: 1px dotted;\n    outline: 5px auto -webkit-focus-ring-color\n}\n\nfieldset, ol, ul {\n    margin: 0;\n    padding: 0\n}\n\nol, ul {\n    list-style: none\n}\n\nhtml {\n    font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica Neue, Arial, Noto Sans, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;\n    line-height: 1.5\n}\n\n*, :after, :before {\n    box-sizing: border-box;\n    border: 0 solid #d5d6d7\n}\n\nhr {\n    border-top-width: 1px\n}\n\nimg {\n    border-style: solid\n}\n\ntextarea {\n    resize: vertical\n}\n\ninput::-moz-placeholder, textarea::-moz-placeholder {\n    color: #a0aec0\n}\n\ninput:-ms-input-placeholder, textarea:-ms-input-placeholder {\n    color: #a0aec0\n}\n\ninput::placeholder, textarea::placeholder {\n    color: #a0aec0\n}\n\n[role=button], button {\n    cursor: pointer\n}\n\ntable {\n    border-collapse: collapse\n}\n\nh1, h2, h3, h4, h5, h6 {\n    font-size: inherit;\n    font-weight: inherit\n}\n\na {\n    color: inherit;\n    text-decoration: inherit\n}\n\nbutton, input, optgroup, select, textarea {\n    padding: 0;\n    line-height: inherit;\n    color: inherit\n}\n\ncode, kbd, pre, samp {\n    font-family: Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace\n}\n\naudio, canvas, embed, iframe, img, object, svg, video {\n    display: block;\n    vertical-align: middle\n}\n\nimg, video {\n    max-width: 100%;\n    height: auto\n}\n\n.container {\n    width: 100%\n}\n\n@media (min-width: 640px) {\n    .container {\n        max-width: 640px\n    }\n}\n\n@media (min-width: 768px) {\n    .container {\n        max-width: 768px\n    }\n}\n\n@media (min-width: 1024px) {\n    .container {\n        max-width: 1024px\n    }\n}\n\n@media (min-width: 1280px) {\n    .container {\n        max-width: 1280px\n    }\n}\n\n.form-input {\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-color: #fff;\n    border-color: #e2e8f0;\n    border-width: 1px;\n    border-radius: .25rem;\n    padding: .5rem .75rem;\n    font-size: 1rem;\n    line-height: 1.5\n}\n\n.form-input::-moz-placeholder {\n    color: #9e9e9e;\n    opacity: 1\n}\n\n.form-input:-ms-input-placeholder {\n    color: #9e9e9e;\n    opacity: 1\n}\n\n.form-input::placeholder {\n    color: #9e9e9e;\n    opacity: 1\n}\n\n.form-input:focus {\n    outline: none;\n    box-shadow: 0 0 0 3px rgba(66, 153, 225, .5);\n    border-color: #63b3ed\n}\n\n.form-textarea {\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-color: #fff;\n    border-color: #e2e8f0;\n    border-width: 1px;\n    border-radius: .25rem;\n    padding: .5rem .75rem;\n    font-size: 1rem;\n    line-height: 1.5\n}\n\n.form-textarea::-moz-placeholder {\n    color: #9e9e9e;\n    opacity: 1\n}\n\n.form-textarea:-ms-input-placeholder {\n    color: #9e9e9e;\n    opacity: 1\n}\n\n.form-textarea::placeholder {\n    color: #9e9e9e;\n    opacity: 1\n}\n\n.form-textarea:focus {\n    outline: none;\n    box-shadow: 0 0 0 3px rgba(66, 153, 225, .5);\n    border-color: #63b3ed\n}\n\n.form-multiselect {\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    background-color: #fff;\n    border-color: #e2e8f0;\n    border-width: 1px;\n    border-radius: .25rem;\n    padding: .5rem .75rem;\n    font-size: 1rem;\n    line-height: 1.5\n}\n\n.form-multiselect:focus {\n    outline: none;\n    box-shadow: 0 0 0 3px rgba(66, 153, 225, .5);\n    border-color: #63b3ed\n}\n\n.form-select {\n    background-image: url(\"data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23a0aec0'%3E%3Cpath d='M15.3 9.3a1 1 0 011.4 1.4l-4 4a1 1 0 01-1.4 0l-4-4a1 1 0 011.4-1.4l3.3 3.29 3.3-3.3z'/%3E%3C/svg%3E\");\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    -webkit-print-color-adjust: exact;\n    color-adjust: exact;\n    background-repeat: no-repeat;\n    background-color: #fff;\n    border-color: #e2e8f0;\n    border-width: 1px;\n    border-radius: .25rem;\n    padding: .5rem 2.5rem .5rem .75rem;\n    font-size: 1rem;\n    line-height: 1.5;\n    background-position: right .5rem center;\n    background-size: 1.5em 1.5em\n}\n\n.form-select::-ms-expand {\n    color: #a0aec0;\n    border: none\n}\n\n@media not print {\n    .form-select::-ms-expand {\n        display: none\n    }\n}\n\n@media print and (-ms-high-contrast: active), print and (-ms-high-contrast: none) {\n    .form-select {\n        padding-right: .75rem\n    }\n}\n\n.form-select:focus {\n    outline: none;\n    box-shadow: 0 0 0 3px rgba(66, 153, 225, .5);\n    border-color: #63b3ed\n}\n\n.form-checkbox {\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    -webkit-print-color-adjust: exact;\n    color-adjust: exact;\n    display: inline-block;\n    vertical-align: middle;\n    background-origin: border-box;\n    -webkit-user-select: none;\n    -moz-user-select: none;\n    -ms-user-select: none;\n    user-select: none;\n    flex-shrink: 0;\n    height: 1em;\n    width: 1em;\n    color: #4299e1;\n    background-color: #fff;\n    border-color: #e2e8f0;\n    border-width: 1px;\n    border-radius: .25rem\n}\n\n.form-checkbox:checked {\n    background-image: url(\"data:image/svg+xml;charset=utf-8,%3Csvg viewBox='0 0 16 16' fill='%23fff' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M5.707 7.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4a1 1 0 00-1.414-1.414L7 8.586 5.707 7.293z'/%3E%3C/svg%3E\");\n    border-color: transparent;\n    background-color: currentColor;\n    background-size: 100% 100%;\n    background-position: 50%;\n    background-repeat: no-repeat\n}\n\n@media not print {\n    .form-checkbox::-ms-check {\n        border-width: 1px;\n        color: transparent;\n        background: inherit;\n        border-color: inherit;\n        border-radius: inherit\n    }\n}\n\n.form-checkbox:focus {\n    outline: none;\n    box-shadow: 0 0 0 3px rgba(66, 153, 225, .5);\n    border-color: #63b3ed\n}\n\n.form-radio {\n    -webkit-appearance: none;\n    -moz-appearance: none;\n    appearance: none;\n    -webkit-print-color-adjust: exact;\n    color-adjust: exact;\n    display: inline-block;\n    vertical-align: middle;\n    background-origin: border-box;\n    -webkit-user-select: none;\n    -moz-user-select: none;\n    -ms-user-select: none;\n    user-select: none;\n    flex-shrink: 0;\n    border-radius: 100%;\n    height: 1em;\n    width: 1em;\n    color: #4299e1;\n    background-color: #fff;\n    border-color: #e2e8f0;\n    border-width: 1px\n}\n\n.form-radio:checked {\n    background-image: url(\"data:image/svg+xml;charset=utf-8,%3Csvg viewBox='0 0 16 16' fill='%23fff' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='8' cy='8' r='3'/%3E%3C/svg%3E\");\n    border-color: transparent;\n    background-color: currentColor;\n    background-size: 100% 100%;\n    background-position: 50%;\n    background-repeat: no-repeat\n}\n\n@media not print {\n    .form-radio::-ms-check {\n        border-width: 1px;\n        color: transparent;\n        background: inherit;\n        border-color: inherit;\n        border-radius: inherit\n    }\n}\n\n.form-radio:focus {\n    outline: none;\n    box-shadow: 0 0 0 3px rgba(66, 153, 225, .5);\n    border-color: #63b3ed\n}\n\n.space-y-2 > :not(template) ~ :not(template) {\n    --space-y-reverse: 0;\n    margin-top: calc(0.5rem * (1 - var(--space-y-reverse)));\n    margin-bottom: calc(0.5rem * var(--space-y-reverse))\n}\n\n.space-x-3 > :not(template) ~ :not(template) {\n    --space-x-reverse: 0;\n    margin-right: calc(0.75rem * var(--space-x-reverse));\n    margin-left: calc(0.75rem * (1 - var(--space-x-reverse)))\n}\n\n.space-y-4 > :not(template) ~ :not(template) {\n    --space-y-reverse: 0;\n    margin-top: calc(1rem * (1 - var(--space-y-reverse)));\n    margin-bottom: calc(1rem * var(--space-y-reverse))\n}\n\n.space-x-4 > :not(template) ~ :not(template) {\n    --space-x-reverse: 0;\n    margin-right: calc(1rem * var(--space-x-reverse));\n    margin-left: calc(1rem * (1 - var(--space-x-reverse)))\n}\n\n.space-x-6 > :not(template) ~ :not(template) {\n    --space-x-reverse: 0;\n    margin-right: calc(1.5rem * var(--space-x-reverse));\n    margin-left: calc(1.5rem * (1 - var(--space-x-reverse)))\n}\n\n.divide-y > :not(template) ~ :not(template) {\n    --divide-y-reverse: 0;\n    border-top-width: calc(1px * (1 - var(--divide-y-reverse)));\n    border-bottom-width: calc(1px * var(--divide-y-reverse))\n}\n\n.theme-dark .dark\\:divide-gray-700 > :not(template) ~ :not(template) {\n    --divide-opacity: 1;\n    border-color: #24262d;\n    border-color: rgba(36, 38, 45, var(--divide-opacity))\n}\n\n.bg-white {\n    --bg-opacity: 1;\n    background-color: #fff;\n    background-color: rgba(255, 255, 255, var(--bg-opacity))\n}\n\n.bg-black {\n    --bg-opacity: 1;\n    background-color: #000;\n    background-color: rgba(0, 0, 0, var(--bg-opacity))\n}\n\n.bg-gray-50 {\n    --bg-opacity: 1;\n    background-color: #f9fafb;\n    background-color: rgba(249, 250, 251, var(--bg-opacity))\n}\n\n.bg-gray-100 {\n    --bg-opacity: 1;\n    background-color: #f4f5f7;\n    background-color: rgba(244, 245, 247, var(--bg-opacity))\n}\n\n.bg-red-100 {\n    --bg-opacity: 1;\n    background-color: #fde8e8;\n    background-color: rgba(253, 232, 232, var(--bg-opacity))\n}\n\n.bg-red-600 {\n    --bg-opacity: 1;\n    background-color: #e02424;\n    background-color: rgba(224, 36, 36, var(--bg-opacity))\n}\n\n.bg-orange-100 {\n    --bg-opacity: 1;\n    background-color: #feecdc;\n    background-color: rgba(254, 236, 220, var(--bg-opacity))\n}\n\n.bg-green-100 {\n    --bg-opacity: 1;\n    background-color: #def7ec;\n    background-color: rgba(222, 247, 236, var(--bg-opacity))\n}\n\n.bg-teal-100 {\n    --bg-opacity: 1;\n    background-color: #d5f5f6;\n    background-color: rgba(213, 245, 246, var(--bg-opacity))\n}\n\n.bg-teal-500 {\n    --bg-opacity: 1;\n    background-color: #0694a2;\n    background-color: rgba(6, 148, 162, var(--bg-opacity))\n}\n\n.bg-teal-600 {\n    --bg-opacity: 1;\n    background-color: #047481;\n    background-color: rgba(4, 116, 129, var(--bg-opacity))\n}\n\n.bg-blue-100 {\n    --bg-opacity: 1;\n    background-color: #e1effe;\n    background-color: rgba(225, 239, 254, var(--bg-opacity))\n}\n\n.bg-blue-500 {\n    --bg-opacity: 1;\n    background-color: #3f83f8;\n    background-color: rgba(63, 131, 248, var(--bg-opacity))\n}\n\n.bg-blue-600 {\n    --bg-opacity: 1;\n    background-color: #1c64f2;\n    background-color: rgba(28, 100, 242, var(--bg-opacity))\n}\n\n.bg-purple-600 {\n    --bg-opacity: 1;\n    background-color: #7e3af2;\n    background-color: rgba(126, 58, 242, var(--bg-opacity))\n}\n\n.hover\\:bg-gray-100:hover {\n    --bg-opacity: 1;\n    background-color: #f4f5f7;\n    background-color: rgba(244, 245, 247, var(--bg-opacity))\n}\n\n.hover\\:bg-purple-700:hover {\n    --bg-opacity: 1;\n    background-color: #6c2bd9;\n    background-color: rgba(108, 43, 217, var(--bg-opacity))\n}\n\n.focus\\:bg-white:focus {\n    --bg-opacity: 1;\n    background-color: #fff;\n    background-color: rgba(255, 255, 255, var(--bg-opacity))\n}\n\n.active\\:bg-transparent:active {\n    background-color: transparent\n}\n\n.active\\:bg-purple-600:active {\n    --bg-opacity: 1;\n    background-color: #7e3af2;\n    background-color: rgba(126, 58, 242, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-gray-700 {\n    --bg-opacity: 1;\n    background-color: #24262d;\n    background-color: rgba(36, 38, 45, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-gray-800 {\n    --bg-opacity: 1;\n    background-color: #1a1c23;\n    background-color: rgba(26, 28, 35, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-gray-900 {\n    --bg-opacity: 1;\n    background-color: #121317;\n    background-color: rgba(18, 19, 23, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-red-600 {\n    --bg-opacity: 1;\n    background-color: #e02424;\n    background-color: rgba(224, 36, 36, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-red-700 {\n    --bg-opacity: 1;\n    background-color: #c81e1e;\n    background-color: rgba(200, 30, 30, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-orange-500 {\n    --bg-opacity: 1;\n    background-color: #ff5a1f;\n    background-color: rgba(255, 90, 31, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-orange-600 {\n    --bg-opacity: 1;\n    background-color: #d03801;\n    background-color: rgba(208, 56, 1, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-green-500 {\n    --bg-opacity: 1;\n    background-color: #0e9f6e;\n    background-color: rgba(14, 159, 110, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-green-700 {\n    --bg-opacity: 1;\n    background-color: #046c4e;\n    background-color: rgba(4, 108, 78, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-teal-500 {\n    --bg-opacity: 1;\n    background-color: #0694a2;\n    background-color: rgba(6, 148, 162, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:bg-blue-500 {\n    --bg-opacity: 1;\n    background-color: #3f83f8;\n    background-color: rgba(63, 131, 248, var(--bg-opacity))\n}\n\n.theme-dark .dark\\:hover\\:bg-gray-800:hover {\n    --bg-opacity: 1;\n    background-color: #1a1c23;\n    background-color: rgba(26, 28, 35, var(--bg-opacity))\n}\n\n.bg-opacity-50 {\n    --bg-opacity: 0.5\n}\n\n.border-transparent {\n    border-color: transparent\n}\n\n.border-white {\n    --border-opacity: 1;\n    border-color: #fff;\n    border-color: rgba(255, 255, 255, var(--border-opacity))\n}\n\n.border-gray-100 {\n    --border-opacity: 1;\n    border-color: #f4f5f7;\n    border-color: rgba(244, 245, 247, var(--border-opacity))\n}\n\n.border-gray-300 {\n    --border-opacity: 1;\n    border-color: #d5d6d7;\n    border-color: rgba(213, 214, 215, var(--border-opacity))\n}\n\n.border-red-600 {\n    --border-opacity: 1;\n    border-color: #e02424;\n    border-color: rgba(224, 36, 36, var(--border-opacity))\n}\n\n.border-green-600 {\n    --border-opacity: 1;\n    border-color: #057a55;\n    border-color: rgba(5, 122, 85, var(--border-opacity))\n}\n\n.border-purple-600 {\n    --border-opacity: 1;\n    border-color: #7e3af2;\n    border-color: rgba(126, 58, 242, var(--border-opacity))\n}\n\n.focus\\:border-gray-500:focus {\n    --border-opacity: 1;\n    border-color: #707275;\n    border-color: rgba(112, 114, 117, var(--border-opacity))\n}\n\n.focus\\:border-red-400:focus {\n    --border-opacity: 1;\n    border-color: #f98080;\n    border-color: rgba(249, 128, 128, var(--border-opacity))\n}\n\n.focus\\:border-green-400:focus {\n    --border-opacity: 1;\n    border-color: #31c48d;\n    border-color: rgba(49, 196, 141, var(--border-opacity))\n}\n\n.focus\\:border-purple-300:focus {\n    --border-opacity: 1;\n    border-color: #cabffd;\n    border-color: rgba(202, 191, 253, var(--border-opacity))\n}\n\n.focus\\:border-purple-400:focus {\n    --border-opacity: 1;\n    border-color: #ac94fa;\n    border-color: rgba(172, 148, 250, var(--border-opacity))\n}\n\n.hover\\:border-gray-500:hover {\n    --border-opacity: 1;\n    border-color: #707275;\n    border-color: rgba(112, 114, 117, var(--border-opacity))\n}\n\n.theme-dark .dark\\:border-gray-600 {\n    --border-opacity: 1;\n    border-color: #4c4f52;\n    border-color: rgba(76, 79, 82, var(--border-opacity))\n}\n\n.theme-dark .dark\\:border-gray-700 {\n    --border-opacity: 1;\n    border-color: #24262d;\n    border-color: rgba(36, 38, 45, var(--border-opacity))\n}\n\n.theme-dark .dark\\:border-gray-800 {\n    --border-opacity: 1;\n    border-color: #1a1c23;\n    border-color: rgba(26, 28, 35, var(--border-opacity))\n}\n\n.rounded {\n    border-radius: .25rem\n}\n\n.rounded-md {\n    border-radius: .375rem\n}\n\n.rounded-lg {\n    border-radius: .5rem\n}\n\n.rounded-full {\n    border-radius: 9999px\n}\n\n.rounded-r-md {\n    border-top-right-radius: .375rem;\n    border-bottom-right-radius: .375rem\n}\n\n.rounded-l-md {\n    border-top-left-radius: .375rem;\n    border-bottom-left-radius: .375rem\n}\n\n.rounded-t-lg {\n    border-top-left-radius: .5rem\n}\n\n.rounded-r-lg, .rounded-t-lg {\n    border-top-right-radius: .5rem\n}\n\n.rounded-r-lg {\n    border-bottom-right-radius: .5rem\n}\n\n.rounded-l-lg {\n    border-top-left-radius: .5rem;\n    border-bottom-left-radius: .5rem\n}\n\n.rounded-tr-lg {\n    border-top-right-radius: .5rem\n}\n\n.rounded-br-lg {\n    border-bottom-right-radius: .5rem\n}\n\n.border-0 {\n    border-width: 0\n}\n\n.border-2 {\n    border-width: 2px\n}\n\n.border {\n    border-width: 1px\n}\n\n.border-r-0 {\n    border-right-width: 0\n}\n\n.border-t {\n    border-top-width: 1px\n}\n\n.border-b {\n    border-bottom-width: 1px\n}\n\n.cursor-not-allowed {\n    cursor: not-allowed\n}\n\n.block {\n    display: block\n}\n\n.inline-block {\n    display: inline-block\n}\n\n.flex {\n    display: flex\n}\n\n.inline-flex {\n    display: inline-flex\n}\n\n.table {\n    display: table\n}\n\n.grid {\n    display: grid\n}\n\n.hidden {\n    display: none\n}\n\n.theme-dark .dark\\:block {\n    display: block\n}\n\n.theme-dark .dark\\:hidden {\n    display: none\n}\n\n.flex-col {\n    flex-direction: column\n}\n\n.flex-wrap {\n    flex-wrap: wrap\n}\n\n.items-end {\n    align-items: flex-end\n}\n\n.items-center {\n    align-items: center\n}\n\n.justify-end {\n    justify-content: flex-end\n}\n\n.justify-center {\n    justify-content: center\n}\n\n.justify-between {\n    justify-content: space-between\n}\n\n.flex-1 {\n    flex: 1 1 0%\n}\n\n.flex-shrink-0 {\n    flex-shrink: 0\n}\n\n.font-medium {\n    font-weight: 500\n}\n\n.font-semibold {\n    font-weight: 600\n}\n\n.font-bold {\n    font-weight: 700\n}\n\n.h-3 {\n    height: .75rem\n}\n\n.h-4 {\n    height: 1rem\n}\n\n.h-5 {\n    height: 1.25rem\n}\n\n.h-6 {\n    height: 1.5rem\n}\n\n.h-8 {\n    height: 2rem\n}\n\n.h-12 {\n    height: 3rem\n}\n\n.h-32 {\n    height: 8rem\n}\n\n.h-full {\n    height: 100%\n}\n\n.h-screen {\n    height: 100vh\n}\n\n.text-xs {\n    font-size: .75rem\n}\n\n.text-sm {\n    font-size: .875rem\n}\n\n.text-lg {\n    font-size: 1.125rem\n}\n\n.text-xl {\n    font-size: 1.25rem\n}\n\n.text-2xl {\n    font-size: 1.5rem\n}\n\n.text-6xl {\n    font-size: 4rem\n}\n\n.leading-5 {\n    line-height: 1.25rem\n}\n\n.leading-none {\n    line-height: 1\n}\n\n.leading-tight {\n    line-height: 1.25\n}\n\n.my-6 {\n    margin-top: 1.5rem;\n    margin-bottom: 1.5rem\n}\n\n.my-8 {\n    margin-top: 2rem;\n    margin-bottom: 2rem\n}\n\n.mx-auto {\n    margin-left: auto;\n    margin-right: auto\n}\n\n.-mx-6 {\n    margin-left: -1.5rem;\n    margin-right: -1.5rem\n}\n\n.mt-1 {\n    margin-top: .25rem\n}\n\n.mr-1 {\n    margin-right: .25rem\n}\n\n.mt-2 {\n    margin-top: .5rem\n}\n\n.mr-2 {\n    margin-right: .5rem\n}\n\n.mb-2 {\n    margin-bottom: .5rem\n}\n\n.ml-2 {\n    margin-left: .5rem\n}\n\n.mr-3 {\n    margin-right: .75rem\n}\n\n.ml-3 {\n    margin-left: .75rem\n}\n\n.mt-4 {\n    margin-top: 1rem\n}\n\n.mr-4 {\n    margin-right: 1rem\n}\n\n.mb-4 {\n    margin-bottom: 1rem\n}\n\n.ml-4 {\n    margin-left: 1rem\n}\n\n.mr-5 {\n    margin-right: 1.25rem\n}\n\n.mt-6 {\n    margin-top: 1.5rem\n}\n\n.mr-6 {\n    margin-right: 1.5rem\n}\n\n.mb-6 {\n    margin-bottom: 1.5rem\n}\n\n.ml-6 {\n    margin-left: 1.5rem\n}\n\n.mt-8 {\n    margin-top: 2rem\n}\n\n.mb-8 {\n    margin-bottom: 2rem\n}\n\n.mt-16 {\n    margin-top: 4rem\n}\n\n.-mr-1 {\n    margin-right: -.25rem\n}\n\n.-ml-1 {\n    margin-left: -.25rem\n}\n\n.-mb-4 {\n    margin-bottom: -1rem\n}\n\n.max-h-0 {\n    max-height: 0\n}\n\n.max-h-xl {\n    max-height: 36rem\n}\n\n.max-w-xl {\n    max-width: 36rem\n}\n\n.max-w-2xl {\n    max-width: 42rem\n}\n\n.max-w-4xl {\n    max-width: 56rem\n}\n\n.min-h-screen {\n    min-height: 100vh\n}\n\n.min-w-0 {\n    min-width: 0\n}\n\n.object-cover {\n    -o-object-fit: cover;\n    object-fit: cover\n}\n\n.opacity-0 {\n    opacity: 0\n}\n\n.opacity-25 {\n    opacity: .25\n}\n\n.opacity-50 {\n    opacity: .5\n}\n\n.opacity-100 {\n    opacity: 1\n}\n\n.focus\\:outline-none:focus {\n    outline: 0\n}\n\n.overflow-hidden {\n    overflow: hidden\n}\n\n.overflow-x-auto {\n    overflow-x: auto\n}\n\n.overflow-y-auto {\n    overflow-y: auto\n}\n\n.p-1 {\n    padding: .25rem\n}\n\n.p-2 {\n    padding: .5rem\n}\n\n.p-3 {\n    padding: .75rem\n}\n\n.p-4 {\n    padding: 1rem\n}\n\n.p-6 {\n    padding: 1.5rem\n}\n\n.py-1 {\n    padding-top: .25rem;\n    padding-bottom: .25rem\n}\n\n.py-2 {\n    padding-top: .5rem;\n    padding-bottom: .5rem\n}\n\n.px-2 {\n    padding-left: .5rem;\n    padding-right: .5rem\n}\n\n.py-3 {\n    padding-top: .75rem;\n    padding-bottom: .75rem\n}\n\n.px-3 {\n    padding-left: .75rem;\n    padding-right: .75rem\n}\n\n.py-4 {\n    padding-top: 1rem;\n    padding-bottom: 1rem\n}\n\n.px-4 {\n    padding-left: 1rem;\n    padding-right: 1rem\n}\n\n.px-5 {\n    padding-left: 1.25rem;\n    padding-right: 1.25rem\n}\n\n.px-6 {\n    padding-left: 1.5rem;\n    padding-right: 1.5rem\n}\n\n.px-10 {\n    padding-left: 2.5rem;\n    padding-right: 2.5rem\n}\n\n.pr-2 {\n    padding-right: .5rem\n}\n\n.pl-2 {\n    padding-left: .5rem\n}\n\n.pl-8 {\n    padding-left: 2rem\n}\n\n.pr-10 {\n    padding-right: 2.5rem\n}\n\n.pl-10 {\n    padding-left: 2.5rem\n}\n\n.pb-16 {\n    padding-bottom: 4rem\n}\n\n.pr-20 {\n    padding-right: 5rem\n}\n\n.pl-20 {\n    padding-left: 5rem\n}\n\n.placeholder-gray-600::-moz-placeholder {\n    --placeholder-opacity: 1;\n    color: #4c4f52;\n    color: rgba(76, 79, 82, var(--placeholder-opacity))\n}\n\n.placeholder-gray-600:-ms-input-placeholder {\n    --placeholder-opacity: 1;\n    color: #4c4f52;\n    color: rgba(76, 79, 82, var(--placeholder-opacity))\n}\n\n.placeholder-gray-600::placeholder {\n    --placeholder-opacity: 1;\n    color: #4c4f52;\n    color: rgba(76, 79, 82, var(--placeholder-opacity))\n}\n\n.focus\\:placeholder-gray-500:focus::-moz-placeholder {\n    --placeholder-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--placeholder-opacity))\n}\n\n.focus\\:placeholder-gray-500:focus:-ms-input-placeholder {\n    --placeholder-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--placeholder-opacity))\n}\n\n.focus\\:placeholder-gray-500:focus::placeholder {\n    --placeholder-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--placeholder-opacity))\n}\n\n.theme-dark .dark\\:placeholder-gray-500::-moz-placeholder {\n    --placeholder-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--placeholder-opacity))\n}\n\n.theme-dark .dark\\:placeholder-gray-500:-ms-input-placeholder {\n    --placeholder-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--placeholder-opacity))\n}\n\n.theme-dark .dark\\:placeholder-gray-500::placeholder {\n    --placeholder-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--placeholder-opacity))\n}\n\n.theme-dark .dark\\:focus\\:placeholder-gray-600:focus::-moz-placeholder {\n    --placeholder-opacity: 1;\n    color: #4c4f52;\n    color: rgba(76, 79, 82, var(--placeholder-opacity))\n}\n\n.theme-dark .dark\\:focus\\:placeholder-gray-600:focus:-ms-input-placeholder {\n    --placeholder-opacity: 1;\n    color: #4c4f52;\n    color: rgba(76, 79, 82, var(--placeholder-opacity))\n}\n\n.theme-dark .dark\\:focus\\:placeholder-gray-600:focus::placeholder {\n    --placeholder-opacity: 1;\n    color: #4c4f52;\n    color: rgba(76, 79, 82, var(--placeholder-opacity))\n}\n\n.pointer-events-none {\n    pointer-events: none\n}\n\n.fixed {\n    position: fixed\n}\n\n.absolute {\n    position: absolute\n}\n\n.relative {\n    position: relative\n}\n\n.inset-0 {\n    right: 0;\n    left: 0\n}\n\n.inset-0, .inset-y-0 {\n    top: 0;\n    bottom: 0\n}\n\n.top-0 {\n    top: 0\n}\n\n.right-0 {\n    right: 0\n}\n\n.left-0 {\n    left: 0\n}\n\n.shadow-xs {\n    box-shadow: 0 0 0 1px rgba(0, 0, 0, .05)\n}\n\n.shadow {\n    box-shadow: 0 1px 3px 0 rgba(0, 0, 0, .1), 0 1px 2px 0 rgba(0, 0, 0, .06)\n}\n\n.shadow-md {\n    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, .1), 0 2px 4px -1px rgba(0, 0, 0, .06)\n}\n\n.shadow-xl {\n    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, .1), 0 10px 10px -5px rgba(0, 0, 0, .04)\n}\n\n.shadow-inner {\n    box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, .06)\n}\n\n.fill-current {\n    fill: currentColor\n}\n\n.text-left {\n    text-align: left\n}\n\n.text-center {\n    text-align: center\n}\n\n.text-white {\n    --text-opacity: 1;\n    color: #fff;\n    color: rgba(255, 255, 255, var(--text-opacity))\n}\n\n.text-black {\n    --text-opacity: 1;\n    color: #000;\n    color: rgba(0, 0, 0, var(--text-opacity))\n}\n\n.text-gray-400 {\n    --text-opacity: 1;\n    color: #9e9e9e;\n    color: rgba(158, 158, 158, var(--text-opacity))\n}\n\n.text-gray-500 {\n    --text-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--text-opacity))\n}\n\n.text-gray-600 {\n    --text-opacity: 1;\n    color: #4c4f52;\n    color: rgba(76, 79, 82, var(--text-opacity))\n}\n\n.text-gray-700 {\n    --text-opacity: 1;\n    color: #24262d;\n    color: rgba(36, 38, 45, var(--text-opacity))\n}\n\n.text-gray-800 {\n    --text-opacity: 1;\n    color: #1a1c23;\n    color: rgba(26, 28, 35, var(--text-opacity))\n}\n\n.text-red-600 {\n    --text-opacity: 1;\n    color: #e02424;\n    color: rgba(224, 36, 36, var(--text-opacity))\n}\n\n.text-red-700 {\n    --text-opacity: 1;\n    color: #c81e1e;\n    color: rgba(200, 30, 30, var(--text-opacity))\n}\n\n.text-orange-500 {\n    --text-opacity: 1;\n    color: #ff5a1f;\n    color: rgba(255, 90, 31, var(--text-opacity))\n}\n\n.text-orange-700 {\n    --text-opacity: 1;\n    color: #b43403;\n    color: rgba(180, 52, 3, var(--text-opacity))\n}\n\n.text-green-500 {\n    --text-opacity: 1;\n    color: #0e9f6e;\n    color: rgba(14, 159, 110, var(--text-opacity))\n}\n\n.text-green-600 {\n    --text-opacity: 1;\n    color: #057a55;\n    color: rgba(5, 122, 85, var(--text-opacity))\n}\n\n.text-green-700 {\n    --text-opacity: 1;\n    color: #046c4e;\n    color: rgba(4, 108, 78, var(--text-opacity))\n}\n\n.text-teal-500 {\n    --text-opacity: 1;\n    color: #0694a2;\n    color: rgba(6, 148, 162, var(--text-opacity))\n}\n\n.text-blue-500 {\n    --text-opacity: 1;\n    color: #3f83f8;\n    color: rgba(63, 131, 248, var(--text-opacity))\n}\n\n.text-purple-100 {\n    --text-opacity: 1;\n    color: #edebfe;\n    color: rgba(237, 235, 254, var(--text-opacity))\n}\n\n.text-purple-200 {\n    --text-opacity: 1;\n    color: #dcd7fe;\n    color: rgba(220, 215, 254, var(--text-opacity))\n}\n\n.text-purple-600 {\n    --text-opacity: 1;\n    color: #7e3af2;\n    color: rgba(126, 58, 242, var(--text-opacity))\n}\n\n.focus-within\\:text-purple-500:focus-within {\n    --text-opacity: 1;\n    color: #9061f9;\n    color: rgba(144, 97, 249, var(--text-opacity))\n}\n\n.focus-within\\:text-purple-600:focus-within {\n    --text-opacity: 1;\n    color: #7e3af2;\n    color: rgba(126, 58, 242, var(--text-opacity))\n}\n\n.hover\\:text-gray-700:hover {\n    --text-opacity: 1;\n    color: #24262d;\n    color: rgba(36, 38, 45, var(--text-opacity))\n}\n\n.hover\\:text-gray-800:hover {\n    --text-opacity: 1;\n    color: #1a1c23;\n    color: rgba(26, 28, 35, var(--text-opacity))\n}\n\n.active\\:text-gray-500:active {\n    --text-opacity: 1;\n    color: #707275;\n    color: rgba(112, 114, 117, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-white {\n    --text-opacity: 1;\n    color: #fff;\n    color: rgba(255, 255, 255, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-gray-100 {\n    --text-opacity: 1;\n    color: #f4f5f7;\n    color: rgba(244, 245, 247, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-gray-200 {\n    --text-opacity: 1;\n    color: #e5e7eb;\n    color: rgba(229, 231, 235, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-gray-300 {\n    --text-opacity: 1;\n    color: #d5d6d7;\n    color: rgba(213, 214, 215, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-gray-400 {\n    --text-opacity: 1;\n    color: #9e9e9e;\n    color: rgba(158, 158, 158, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-red-100 {\n    --text-opacity: 1;\n    color: #fde8e8;\n    color: rgba(253, 232, 232, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-red-400 {\n    --text-opacity: 1;\n    color: #f98080;\n    color: rgba(249, 128, 128, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-orange-100 {\n    --text-opacity: 1;\n    color: #feecdc;\n    color: rgba(254, 236, 220, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-green-100 {\n    --text-opacity: 1;\n    color: #def7ec;\n    color: rgba(222, 247, 236, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-green-400 {\n    --text-opacity: 1;\n    color: #31c48d;\n    color: rgba(49, 196, 141, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-teal-100 {\n    --text-opacity: 1;\n    color: #d5f5f6;\n    color: rgba(213, 245, 246, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-blue-100 {\n    --text-opacity: 1;\n    color: #e1effe;\n    color: rgba(225, 239, 254, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-purple-300 {\n    --text-opacity: 1;\n    color: #cabffd;\n    color: rgba(202, 191, 253, var(--text-opacity))\n}\n\n.theme-dark .dark\\:text-purple-400 {\n    --text-opacity: 1;\n    color: #ac94fa;\n    color: rgba(172, 148, 250, var(--text-opacity))\n}\n\n.theme-dark .dark\\:focus-within\\:text-purple-400:focus-within {\n    --text-opacity: 1;\n    color: #ac94fa;\n    color: rgba(172, 148, 250, var(--text-opacity))\n}\n\n.theme-dark .dark\\:hover\\:text-gray-200:hover {\n    --text-opacity: 1;\n    color: #e5e7eb;\n    color: rgba(229, 231, 235, var(--text-opacity))\n}\n\n.uppercase {\n    text-transform: uppercase\n}\n\n.hover\\:underline:hover, .underline {\n    text-decoration: underline\n}\n\n.tracking-wide {\n    letter-spacing: .025em\n}\n\n.align-middle {\n    vertical-align: middle\n}\n\n.whitespace-no-wrap {\n    white-space: nowrap\n}\n\n.w-1 {\n    width: .25rem\n}\n\n.w-3 {\n    width: .75rem\n}\n\n.w-4 {\n    width: 1rem\n}\n\n.w-5 {\n    width: 1.25rem\n}\n\n.w-6 {\n    width: 1.5rem\n}\n\n.w-8 {\n    width: 2rem\n}\n\n.w-12 {\n    width: 3rem\n}\n\n.w-56 {\n    width: 14rem\n}\n\n.w-64 {\n    width: 16rem\n}\n\n.w-full {\n    width: 100%\n}\n\n.z-10 {\n    z-index: 10\n}\n\n.z-20 {\n    z-index: 20\n}\n\n.z-30 {\n    z-index: 30\n}\n\n.gap-6 {\n    grid-gap: 1.5rem;\n    gap: 1.5rem\n}\n\n.col-span-2 {\n    grid-column: span 2/span 2\n}\n\n.col-span-3 {\n    grid-column: span 3/span 3\n}\n\n.col-span-4 {\n    grid-column: span 4/span 4\n}\n\n.transform {\n    --transform-translate-x: 0;\n    --transform-translate-y: 0;\n    --transform-rotate: 0;\n    --transform-skew-x: 0;\n    --transform-skew-y: 0;\n    --transform-scale-x: 1;\n    --transform-scale-y: 1;\n    transform: translateX(var(--transform-translate-x)) translateY(var(--transform-translate-y)) rotate(var(--transform-rotate)) skewX(var(--transform-skew-x)) skewY(var(--transform-skew-y)) scaleX(var(--transform-scale-x)) scaleY(var(--transform-scale-y))\n}\n\n.translate-x-1 {\n    --transform-translate-x: 0.25rem\n}\n\n.-translate-x-20 {\n    --transform-translate-x: -5rem\n}\n\n.-translate-y-1 {\n    --transform-translate-y: -0.25rem\n}\n\n.translate-y-1\\/2 {\n    --transform-translate-y: 50%\n}\n\n.transition-all {\n    transition-property: all\n}\n\n.transition {\n    transition-property: background-color, border-color, color, fill, stroke, opacity, box-shadow, transform\n}\n\n.transition-colors {\n    transition-property: background-color, border-color, color, fill, stroke\n}\n\n.ease-in {\n    transition-timing-function: cubic-bezier(.4, 0, 1, 1)\n}\n\n.ease-out {\n    transition-timing-function: cubic-bezier(0, 0, .2, 1)\n}\n\n.ease-in-out {\n    transition-timing-function: cubic-bezier(.4, 0, .2, 1)\n}\n\n.duration-150 {\n    transition-duration: .15s\n}\n\n.duration-300 {\n    transition-duration: .3s\n}\n\n.focus\\:shadow-outline-gray:focus {\n    box-shadow: 0 0 0 3px rgba(213, 214, 215, .45)\n}\n\n.focus\\:shadow-outline-red:focus {\n    box-shadow: 0 0 0 3px rgba(248, 180, 180, .45)\n}\n\n.focus\\:shadow-outline-green:focus {\n    box-shadow: 0 0 0 3px rgba(132, 225, 188, .45)\n}\n\n.focus\\:shadow-outline-purple:focus {\n    box-shadow: 0 0 0 3px rgba(202, 191, 253, .45)\n}\n\n.theme-dark .dark\\:focus\\:shadow-outline-gray:focus {\n    box-shadow: 0 0 0 3px rgba(213, 214, 215, .45)\n}\n\n@media (min-width: 640px) {\n    .sm\\:space-y-0 > :not(template) ~ :not(template) {\n        --space-y-reverse: 0;\n        margin-top: calc(0px * (1 - var(--space-y-reverse)));\n        margin-bottom: calc(0px * var(--space-y-reverse))\n    }\n\n    .sm\\:space-x-6 > :not(template) ~ :not(template) {\n        --space-x-reverse: 0;\n        margin-right: calc(1.5rem * var(--space-x-reverse));\n        margin-left: calc(1.5rem * (1 - var(--space-x-reverse)))\n    }\n\n    .sm\\:rounded-lg {\n        border-radius: .5rem\n    }\n\n    .sm\\:flex-row {\n        flex-direction: row\n    }\n\n    .sm\\:items-center {\n        align-items: center\n    }\n\n    .sm\\:justify-end {\n        justify-content: flex-end\n    }\n\n    .sm\\:justify-center {\n        justify-content: center\n    }\n\n    .sm\\:m-4 {\n        margin: 1rem\n    }\n\n    .sm\\:mt-auto {\n        margin-top: auto\n    }\n\n    .sm\\:max-w-xl {\n        max-width: 36rem\n    }\n\n    .sm\\:p-12 {\n        padding: 3rem\n    }\n\n    .sm\\:py-2 {\n        padding-top: .5rem;\n        padding-bottom: .5rem\n    }\n\n    .sm\\:px-4 {\n        padding-left: 1rem;\n        padding-right: 1rem\n    }\n\n    .sm\\:w-auto {\n        width: auto\n    }\n\n    .sm\\:grid-cols-9 {\n        grid-template-columns:repeat(9, minmax(0, 1fr))\n    }\n}\n\n@media (min-width: 768px) {\n    .md\\:space-x-4 > :not(template) ~ :not(template) {\n        --space-x-reverse: 0;\n        margin-right: calc(1rem * var(--space-x-reverse));\n        margin-left: calc(1rem * (1 - var(--space-x-reverse)))\n    }\n\n    .md\\:block {\n        display: block\n    }\n\n    .md\\:hidden {\n        display: none\n    }\n\n    .md\\:flex-row {\n        flex-direction: row\n    }\n\n    .md\\:items-end {\n        align-items: flex-end\n    }\n\n    .md\\:h-auto {\n        height: auto\n    }\n\n    .md\\:w-1\\/2 {\n        width: 50%\n    }\n\n    .md\\:grid-cols-2 {\n        grid-template-columns:repeat(2, minmax(0, 1fr))\n    }\n}\n\n@media (min-width: 1024px) {\n    .lg\\:mr-32 {\n        margin-right: 8rem\n    }\n}\n\n@media (min-width: 1280px) {\n    .xl\\:grid-cols-4 {\n        grid-template-columns:repeat(4, minmax(0, 1fr))\n    }\n}\n", ""]);
+// Exports
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
+
+
+/***/ }),
+
+/***/ "./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!./node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./resources/ts/components/users/css/user.css":
+/*!**************************************************************************************************************************************************************************************************************!*\
+  !*** ./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!./node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./resources/ts/components/users/css/user.css ***!
+  \**************************************************************************************************************************************************************************************************************/
+/***/ ((module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => __WEBPACK_DEFAULT_EXPORT__
+/* harmony export */ });
+/* harmony import */ var _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../../../../../node_modules/css-loader/dist/runtime/api.js */ "./node_modules/css-loader/dist/runtime/api.js");
+/* harmony import */ var _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0__);
+// Imports
+
+var ___CSS_LOADER_EXPORT___ = _node_modules_css_loader_dist_runtime_api_js__WEBPACK_IMPORTED_MODULE_0___default()(function(i){return i[1]});
+// Module
+___CSS_LOADER_EXPORT___.push([module.id, ".img-height {\n    height: 434px;\n}\n", ""]);
+// Exports
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (___CSS_LOADER_EXPORT___);
+
+
+/***/ }),
+
+/***/ "./node_modules/css-loader/dist/runtime/api.js":
+/*!*****************************************************!*\
+  !*** ./node_modules/css-loader/dist/runtime/api.js ***!
+  \*****************************************************/
+/***/ ((module) => {
+
+"use strict";
+
+
+/*
+  MIT License http://www.opensource.org/licenses/mit-license.php
+  Author Tobias Koppers @sokra
+*/
+// css base code, injected by the css-loader
+// eslint-disable-next-line func-names
+module.exports = function (cssWithMappingToString) {
+  var list = []; // return the list of modules as css string
+
+  list.toString = function toString() {
+    return this.map(function (item) {
+      var content = cssWithMappingToString(item);
+
+      if (item[2]) {
+        return "@media ".concat(item[2], " {").concat(content, "}");
+      }
+
+      return content;
+    }).join('');
+  }; // import a list of modules into the list
+  // eslint-disable-next-line func-names
+
+
+  list.i = function (modules, mediaQuery, dedupe) {
+    if (typeof modules === 'string') {
+      // eslint-disable-next-line no-param-reassign
+      modules = [[null, modules, '']];
+    }
+
+    var alreadyImportedModules = {};
+
+    if (dedupe) {
+      for (var i = 0; i < this.length; i++) {
+        // eslint-disable-next-line prefer-destructuring
+        var id = this[i][0];
+
+        if (id != null) {
+          alreadyImportedModules[id] = true;
+        }
+      }
+    }
+
+    for (var _i = 0; _i < modules.length; _i++) {
+      var item = [].concat(modules[_i]);
+
+      if (dedupe && alreadyImportedModules[item[0]]) {
+        // eslint-disable-next-line no-continue
+        continue;
+      }
+
+      if (mediaQuery) {
+        if (!item[2]) {
+          item[2] = mediaQuery;
+        } else {
+          item[2] = "".concat(mediaQuery, " and ").concat(item[2]);
+        }
+      }
+
+      list.push(item);
+    }
+  };
+
+  return list;
+};
 
 /***/ }),
 
@@ -2117,6 +5298,200 @@ function pathToRegexp (path, keys, options) {
 module.exports = Array.isArray || function (arr) {
   return Object.prototype.toString.call(arr) == '[object Array]';
 };
+
+
+/***/ }),
+
+/***/ "./node_modules/process/browser.js":
+/*!*****************************************!*\
+  !*** ./node_modules/process/browser.js ***!
+  \*****************************************/
+/***/ ((module) => {
+
+// shim for using process in browser
+var process = module.exports = {};
+
+// cached from whatever global is present so that test runners that stub it
+// don't break things.  But we need to wrap it in a try catch in case it is
+// wrapped in strict mode code which doesn't define any globals.  It's inside a
+// function because try/catches deoptimize in certain engines.
+
+var cachedSetTimeout;
+var cachedClearTimeout;
+
+function defaultSetTimout() {
+    throw new Error('setTimeout has not been defined');
+}
+function defaultClearTimeout () {
+    throw new Error('clearTimeout has not been defined');
+}
+(function () {
+    try {
+        if (typeof setTimeout === 'function') {
+            cachedSetTimeout = setTimeout;
+        } else {
+            cachedSetTimeout = defaultSetTimout;
+        }
+    } catch (e) {
+        cachedSetTimeout = defaultSetTimout;
+    }
+    try {
+        if (typeof clearTimeout === 'function') {
+            cachedClearTimeout = clearTimeout;
+        } else {
+            cachedClearTimeout = defaultClearTimeout;
+        }
+    } catch (e) {
+        cachedClearTimeout = defaultClearTimeout;
+    }
+} ())
+function runTimeout(fun) {
+    if (cachedSetTimeout === setTimeout) {
+        //normal enviroments in sane situations
+        return setTimeout(fun, 0);
+    }
+    // if setTimeout wasn't available but was latter defined
+    if ((cachedSetTimeout === defaultSetTimout || !cachedSetTimeout) && setTimeout) {
+        cachedSetTimeout = setTimeout;
+        return setTimeout(fun, 0);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedSetTimeout(fun, 0);
+    } catch(e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't trust the global object when called normally
+            return cachedSetTimeout.call(null, fun, 0);
+        } catch(e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error
+            return cachedSetTimeout.call(this, fun, 0);
+        }
+    }
+
+
+}
+function runClearTimeout(marker) {
+    if (cachedClearTimeout === clearTimeout) {
+        //normal enviroments in sane situations
+        return clearTimeout(marker);
+    }
+    // if clearTimeout wasn't available but was latter defined
+    if ((cachedClearTimeout === defaultClearTimeout || !cachedClearTimeout) && clearTimeout) {
+        cachedClearTimeout = clearTimeout;
+        return clearTimeout(marker);
+    }
+    try {
+        // when when somebody has screwed with setTimeout but no I.E. maddness
+        return cachedClearTimeout(marker);
+    } catch (e){
+        try {
+            // When we are in I.E. but the script has been evaled so I.E. doesn't  trust the global object when called normally
+            return cachedClearTimeout.call(null, marker);
+        } catch (e){
+            // same as above but when it's a version of I.E. that must have the global object for 'this', hopfully our context correct otherwise it will throw a global error.
+            // Some versions of I.E. have different rules for clearTimeout vs setTimeout
+            return cachedClearTimeout.call(this, marker);
+        }
+    }
+
+
+
+}
+var queue = [];
+var draining = false;
+var currentQueue;
+var queueIndex = -1;
+
+function cleanUpNextTick() {
+    if (!draining || !currentQueue) {
+        return;
+    }
+    draining = false;
+    if (currentQueue.length) {
+        queue = currentQueue.concat(queue);
+    } else {
+        queueIndex = -1;
+    }
+    if (queue.length) {
+        drainQueue();
+    }
+}
+
+function drainQueue() {
+    if (draining) {
+        return;
+    }
+    var timeout = runTimeout(cleanUpNextTick);
+    draining = true;
+
+    var len = queue.length;
+    while(len) {
+        currentQueue = queue;
+        queue = [];
+        while (++queueIndex < len) {
+            if (currentQueue) {
+                currentQueue[queueIndex].run();
+            }
+        }
+        queueIndex = -1;
+        len = queue.length;
+    }
+    currentQueue = null;
+    draining = false;
+    runClearTimeout(timeout);
+}
+
+process.nextTick = function (fun) {
+    var args = new Array(arguments.length - 1);
+    if (arguments.length > 1) {
+        for (var i = 1; i < arguments.length; i++) {
+            args[i - 1] = arguments[i];
+        }
+    }
+    queue.push(new Item(fun, args));
+    if (queue.length === 1 && !draining) {
+        runTimeout(drainQueue);
+    }
+};
+
+// v8 likes predictible objects
+function Item(fun, array) {
+    this.fun = fun;
+    this.array = array;
+}
+Item.prototype.run = function () {
+    this.fun.apply(null, this.array);
+};
+process.title = 'browser';
+process.browser = true;
+process.env = {};
+process.argv = [];
+process.version = ''; // empty string to avoid regexp issues
+process.versions = {};
+
+function noop() {}
+
+process.on = noop;
+process.addListener = noop;
+process.once = noop;
+process.off = noop;
+process.removeListener = noop;
+process.removeAllListeners = noop;
+process.emit = noop;
+process.prependListener = noop;
+process.prependOnceListener = noop;
+
+process.listeners = function (name) { return [] }
+
+process.binding = function (name) {
+    throw new Error('process.binding is not supported');
+};
+
+process.cwd = function () { return '/' };
+process.chdir = function (dir) {
+    throw new Error('process.chdir is not supported');
+};
+process.umask = function() { return 0; };
 
 
 /***/ }),
@@ -27951,6 +31326,1959 @@ if (false) {} else {
 
 /***/ }),
 
+/***/ "./node_modules/react-hook-form/dist/index.cjs.development.js":
+/*!********************************************************************!*\
+  !*** ./node_modules/react-hook-form/dist/index.cjs.development.js ***!
+  \********************************************************************/
+/***/ ((__unused_webpack_module, exports, __webpack_require__) => {
+
+"use strict";
+
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+
+var React = __webpack_require__(/*! react */ "./node_modules/react/index.js");
+
+var isHTMLElement = (value) => value instanceof HTMLElement;
+
+const EVENTS = {
+    BLUR: 'blur',
+    CHANGE: 'change',
+    INPUT: 'input',
+};
+const VALIDATION_MODE = {
+    onBlur: 'onBlur',
+    onChange: 'onChange',
+    onSubmit: 'onSubmit',
+    onTouched: 'onTouched',
+    all: 'all',
+};
+const SELECT = 'select';
+const UNDEFINED = 'undefined';
+const INPUT_VALIDATION_RULES = {
+    max: 'max',
+    min: 'min',
+    maxLength: 'maxLength',
+    minLength: 'minLength',
+    pattern: 'pattern',
+    required: 'required',
+    validate: 'validate',
+};
+
+function attachEventListeners({ ref }, shouldAttachChangeEvent, handleChange) {
+    if (isHTMLElement(ref) && handleChange) {
+        ref.addEventListener(shouldAttachChangeEvent ? EVENTS.CHANGE : EVENTS.INPUT, handleChange);
+        ref.addEventListener(EVENTS.BLUR, handleChange);
+    }
+}
+
+var isNullOrUndefined = (value) => value == null;
+
+const isObjectType = (value) => typeof value === 'object';
+var isObject = (value) => !isNullOrUndefined(value) &&
+    !Array.isArray(value) &&
+    isObjectType(value) &&
+    !(value instanceof Date);
+
+var isKey = (value) => /^\w*$/.test(value);
+
+var compact = (value) => value.filter(Boolean);
+
+var stringToPath = (input) => compact(input
+    .replace(/["|']/g, '')
+    .replace(/\[/g, '.')
+    .replace(/\]/g, '')
+    .split('.'));
+
+function set(object, path, value) {
+    let index = -1;
+    const tempPath = isKey(path) ? [path] : stringToPath(path);
+    const length = tempPath.length;
+    const lastIndex = length - 1;
+    while (++index < length) {
+        const key = tempPath[index];
+        let newValue = value;
+        if (index !== lastIndex) {
+            const objValue = object[key];
+            newValue =
+                isObject(objValue) || Array.isArray(objValue)
+                    ? objValue
+                    : !isNaN(+tempPath[index + 1])
+                        ? []
+                        : {};
+        }
+        object[key] = newValue;
+        object = object[key];
+    }
+    return object;
+}
+
+var transformToNestObject = (data, value = {}) => {
+    for (const key in data) {
+        !isKey(key) ? set(value, key, data[key]) : (value[key] = data[key]);
+    }
+    return value;
+};
+
+var isUndefined = (val) => val === undefined;
+
+var get = (obj = {}, path, defaultValue) => {
+    const result = compact(path.split(/[,[\].]+?/)).reduce((result, key) => (isNullOrUndefined(result) ? result : result[key]), obj);
+    return isUndefined(result) || result === obj
+        ? isUndefined(obj[path])
+            ? defaultValue
+            : obj[path]
+        : result;
+};
+
+var focusOnErrorField = (fields, fieldErrors) => {
+    for (const key in fields) {
+        if (get(fieldErrors, key)) {
+            const field = fields[key];
+            if (field) {
+                if (field.ref.focus && isUndefined(field.ref.focus())) {
+                    break;
+                }
+                else if (field.options) {
+                    field.options[0].ref.focus();
+                    break;
+                }
+            }
+        }
+    }
+};
+
+var removeAllEventListeners = (ref, validateWithStateUpdate) => {
+    if (isHTMLElement(ref) && ref.removeEventListener) {
+        ref.removeEventListener(EVENTS.INPUT, validateWithStateUpdate);
+        ref.removeEventListener(EVENTS.CHANGE, validateWithStateUpdate);
+        ref.removeEventListener(EVENTS.BLUR, validateWithStateUpdate);
+    }
+};
+
+const defaultReturn = {
+    isValid: false,
+    value: '',
+};
+var getRadioValue = (options) => Array.isArray(options)
+    ? options.reduce((previous, option) => option && option.ref.checked
+        ? {
+            isValid: true,
+            value: option.ref.value,
+        }
+        : previous, defaultReturn)
+    : defaultReturn;
+
+var getMultipleSelectValue = (options) => [...options]
+    .filter(({ selected }) => selected)
+    .map(({ value }) => value);
+
+var isRadioInput = (element) => element.type === 'radio';
+
+var isFileInput = (element) => element.type === 'file';
+
+var isCheckBoxInput = (element) => element.type === 'checkbox';
+
+var isMultipleSelect = (element) => element.type === `${SELECT}-multiple`;
+
+const defaultResult = {
+    value: false,
+    isValid: false,
+};
+const validResult = { value: true, isValid: true };
+var getCheckboxValue = (options) => {
+    if (Array.isArray(options)) {
+        if (options.length > 1) {
+            const values = options
+                .filter((option) => option && option.ref.checked)
+                .map(({ ref: { value } }) => value);
+            return { value: values, isValid: !!values.length };
+        }
+        const { checked, value, attributes } = options[0].ref;
+        return checked
+            ? attributes && !isUndefined(attributes.value)
+                ? isUndefined(value) || value === ''
+                    ? validResult
+                    : { value: value, isValid: true }
+                : validResult
+            : defaultResult;
+    }
+    return defaultResult;
+};
+
+function getFieldValue(fieldsRef, name, shallowFieldsStateRef, excludeDisabled) {
+    const field = fieldsRef.current[name];
+    if (field) {
+        const { ref: { value, disabled }, ref, valueAsNumber, valueAsDate, setValueAs, } = field;
+        if (disabled && excludeDisabled) {
+            return;
+        }
+        if (isFileInput(ref)) {
+            return ref.files;
+        }
+        if (isRadioInput(ref)) {
+            return getRadioValue(field.options).value;
+        }
+        if (isMultipleSelect(ref)) {
+            return getMultipleSelectValue(ref.options);
+        }
+        if (isCheckBoxInput(ref)) {
+            return getCheckboxValue(field.options).value;
+        }
+        return valueAsNumber
+            ? +value
+            : valueAsDate
+                ? ref.valueAsDate
+                : setValueAs
+                    ? setValueAs(value)
+                    : value;
+    }
+    if (shallowFieldsStateRef) {
+        return get(shallowFieldsStateRef.current, name);
+    }
+}
+
+function isDetached(element) {
+    if (!element) {
+        return true;
+    }
+    if (!(element instanceof HTMLElement) ||
+        element.nodeType === Node.DOCUMENT_NODE) {
+        return false;
+    }
+    return isDetached(element.parentNode);
+}
+
+var isEmptyObject = (value) => isObject(value) && !Object.keys(value).length;
+
+var isBoolean = (value) => typeof value === 'boolean';
+
+function baseGet(object, updatePath) {
+    const length = updatePath.slice(0, -1).length;
+    let index = 0;
+    while (index < length) {
+        object = isUndefined(object) ? index++ : object[updatePath[index++]];
+    }
+    return object;
+}
+function unset(object, path) {
+    const updatePath = isKey(path) ? [path] : stringToPath(path);
+    const childObject = updatePath.length == 1 ? object : baseGet(object, updatePath);
+    const key = updatePath[updatePath.length - 1];
+    let previousObjRef;
+    if (childObject) {
+        delete childObject[key];
+    }
+    for (let k = 0; k < updatePath.slice(0, -1).length; k++) {
+        let index = -1;
+        let objectRef;
+        const currentPaths = updatePath.slice(0, -(k + 1));
+        const currentPathsLength = currentPaths.length - 1;
+        if (k > 0) {
+            previousObjRef = object;
+        }
+        while (++index < currentPaths.length) {
+            const item = currentPaths[index];
+            objectRef = objectRef ? objectRef[item] : object[item];
+            if (currentPathsLength === index &&
+                ((isObject(objectRef) && isEmptyObject(objectRef)) ||
+                    (Array.isArray(objectRef) &&
+                        !objectRef.filter((data) => (isObject(data) && !isEmptyObject(data)) || isBoolean(data)).length))) {
+                previousObjRef ? delete previousObjRef[item] : delete object[item];
+            }
+            previousObjRef = objectRef;
+        }
+    }
+    return object;
+}
+
+const isSameRef = (fieldValue, ref) => fieldValue && fieldValue.ref === ref;
+function findRemovedFieldAndRemoveListener(fieldsRef, handleChange, field, shallowFieldsStateRef, shouldUnregister, forceDelete) {
+    const { ref, ref: { name }, } = field;
+    const fieldRef = fieldsRef.current[name];
+    if (!shouldUnregister) {
+        const value = getFieldValue(fieldsRef, name, shallowFieldsStateRef);
+        !isUndefined(value) && set(shallowFieldsStateRef.current, name, value);
+    }
+    if (!ref.type || !fieldRef) {
+        delete fieldsRef.current[name];
+        return;
+    }
+    if (isRadioInput(ref) || isCheckBoxInput(ref)) {
+        if (Array.isArray(fieldRef.options) && fieldRef.options.length) {
+            compact(fieldRef.options).forEach((option = {}, index) => {
+                if ((isDetached(option.ref) && isSameRef(option, option.ref)) ||
+                    forceDelete) {
+                    removeAllEventListeners(option.ref, handleChange);
+                    unset(fieldRef.options, `[${index}]`);
+                }
+            });
+            if (fieldRef.options && !compact(fieldRef.options).length) {
+                delete fieldsRef.current[name];
+            }
+        }
+        else {
+            delete fieldsRef.current[name];
+        }
+    }
+    else if ((isDetached(ref) && isSameRef(fieldRef, ref)) || forceDelete) {
+        removeAllEventListeners(ref, handleChange);
+        delete fieldsRef.current[name];
+    }
+}
+
+var isPrimitive = (value) => isNullOrUndefined(value) || !isObjectType(value);
+
+function deepMerge(target, source) {
+    if (isPrimitive(target) || isPrimitive(source)) {
+        return source;
+    }
+    for (const key in source) {
+        const targetValue = target[key];
+        const sourceValue = source[key];
+        try {
+            target[key] =
+                (isObject(targetValue) && isObject(sourceValue)) ||
+                    (Array.isArray(targetValue) && Array.isArray(sourceValue))
+                    ? deepMerge(targetValue, sourceValue)
+                    : sourceValue;
+        }
+        catch (_a) { }
+    }
+    return target;
+}
+
+function setDirtyFields(values, defaultValues, dirtyFields, parentNode, parentName) {
+    let index = -1;
+    while (++index < values.length) {
+        for (const key in values[index]) {
+            if (Array.isArray(values[index][key])) {
+                !dirtyFields[index] && (dirtyFields[index] = {});
+                dirtyFields[index][key] = [];
+                setDirtyFields(values[index][key], get(defaultValues[index] || {}, key, []), dirtyFields[index][key], dirtyFields[index], key);
+            }
+            else {
+                get(defaultValues[index] || {}, key) === values[index][key]
+                    ? set(dirtyFields[index] || {}, key)
+                    : (dirtyFields[index] = Object.assign(Object.assign({}, dirtyFields[index]), { [key]: true }));
+            }
+        }
+        parentNode &&
+            !dirtyFields.length &&
+            delete parentNode[parentName];
+    }
+    return dirtyFields;
+}
+var setFieldArrayDirtyFields = (values, defaultValues, dirtyFields) => deepMerge(setDirtyFields(values, defaultValues, dirtyFields.slice(0, values.length)), setDirtyFields(defaultValues, values, dirtyFields.slice(0, values.length)));
+
+var isString = (value) => typeof value === 'string';
+
+var getFieldsValues = (fieldsRef, shallowFieldsState, shouldUnregister, excludeDisabled, search) => {
+    const output = {};
+    for (const name in fieldsRef.current) {
+        if (isUndefined(search) ||
+            (isString(search)
+                ? name.startsWith(search)
+                : Array.isArray(search) && search.find((data) => name.startsWith(data)))) {
+            output[name] = getFieldValue(fieldsRef, name, undefined, excludeDisabled);
+        }
+    }
+    return shouldUnregister
+        ? transformToNestObject(output)
+        : deepMerge(shallowFieldsState, transformToNestObject(output));
+};
+
+function deepEqual(object1, object2, isErrorObject) {
+    if (isPrimitive(object1) ||
+        isPrimitive(object2) ||
+        object1 instanceof Date ||
+        object2 instanceof Date) {
+        return object1 === object2;
+    }
+    if (!React.isValidElement(object1)) {
+        const keys1 = Object.keys(object1);
+        const keys2 = Object.keys(object2);
+        if (keys1.length !== keys2.length) {
+            return false;
+        }
+        for (const key of keys1) {
+            const val1 = object1[key];
+            if (!(isErrorObject && key === 'ref')) {
+                const val2 = object2[key];
+                if ((isObject(val1) || Array.isArray(val1)) &&
+                    (isObject(val2) || Array.isArray(val2))
+                    ? !deepEqual(val1, val2, isErrorObject)
+                    : val1 !== val2) {
+                    return false;
+                }
+            }
+        }
+    }
+    return true;
+}
+
+var isErrorStateChanged = ({ errors, name, error, validFields, fieldsWithValidation, }) => {
+    const isValid = isUndefined(error);
+    const previousError = get(errors, name);
+    return ((isValid && !!previousError) ||
+        (!isValid && !deepEqual(previousError, error, true)) ||
+        (isValid && get(fieldsWithValidation, name) && !get(validFields, name)));
+};
+
+var isRegex = (value) => value instanceof RegExp;
+
+var getValueAndMessage = (validationData) => isObject(validationData) && !isRegex(validationData)
+    ? validationData
+    : {
+        value: validationData,
+        message: '',
+    };
+
+var isFunction = (value) => typeof value === 'function';
+
+var isMessage = (value) => isString(value) || React.isValidElement(value);
+
+function getValidateError(result, ref, type = 'validate') {
+    if (isMessage(result) || (isBoolean(result) && !result)) {
+        return {
+            type,
+            message: isMessage(result) ? result : '',
+            ref,
+        };
+    }
+}
+
+var appendErrors = (name, validateAllFieldCriteria, errors, type, message) => validateAllFieldCriteria
+    ? Object.assign(Object.assign({}, errors[name]), { types: Object.assign(Object.assign({}, (errors[name] && errors[name].types ? errors[name].types : {})), { [type]: message || true }) }) : {};
+
+var validateField = async (fieldsRef, validateAllFieldCriteria, { ref, ref: { value }, options, required, maxLength, minLength, min, max, pattern, validate, }, shallowFieldsStateRef) => {
+    const name = ref.name;
+    const error = {};
+    const isRadio = isRadioInput(ref);
+    const isCheckBox = isCheckBoxInput(ref);
+    const isRadioOrCheckbox = isRadio || isCheckBox;
+    const isEmpty = value === '';
+    const appendErrorsCurry = appendErrors.bind(null, name, validateAllFieldCriteria, error);
+    const getMinMaxMessage = (exceedMax, maxLengthMessage, minLengthMessage, maxType = INPUT_VALIDATION_RULES.maxLength, minType = INPUT_VALIDATION_RULES.minLength) => {
+        const message = exceedMax ? maxLengthMessage : minLengthMessage;
+        error[name] = Object.assign({ type: exceedMax ? maxType : minType, message,
+            ref }, (exceedMax
+            ? appendErrorsCurry(maxType, message)
+            : appendErrorsCurry(minType, message)));
+    };
+    if (required &&
+        ((!isRadio && !isCheckBox && (isEmpty || isNullOrUndefined(value))) ||
+            (isBoolean(value) && !value) ||
+            (isCheckBox && !getCheckboxValue(options).isValid) ||
+            (isRadio && !getRadioValue(options).isValid))) {
+        const { value, message } = isMessage(required)
+            ? { value: !!required, message: required }
+            : getValueAndMessage(required);
+        if (value) {
+            error[name] = Object.assign({ type: INPUT_VALIDATION_RULES.required, message, ref: isRadioOrCheckbox
+                    ? ((fieldsRef.current[name].options || [])[0] || {}).ref
+                    : ref }, appendErrorsCurry(INPUT_VALIDATION_RULES.required, message));
+            if (!validateAllFieldCriteria) {
+                return error;
+            }
+        }
+    }
+    if ((!isNullOrUndefined(min) || !isNullOrUndefined(max)) && value !== '') {
+        let exceedMax;
+        let exceedMin;
+        const maxOutput = getValueAndMessage(max);
+        const minOutput = getValueAndMessage(min);
+        if (!isNaN(value)) {
+            const valueNumber = ref.valueAsNumber || parseFloat(value);
+            if (!isNullOrUndefined(maxOutput.value)) {
+                exceedMax = valueNumber > maxOutput.value;
+            }
+            if (!isNullOrUndefined(minOutput.value)) {
+                exceedMin = valueNumber < minOutput.value;
+            }
+        }
+        else {
+            const valueDate = ref.valueAsDate || new Date(value);
+            if (isString(maxOutput.value)) {
+                exceedMax = valueDate > new Date(maxOutput.value);
+            }
+            if (isString(minOutput.value)) {
+                exceedMin = valueDate < new Date(minOutput.value);
+            }
+        }
+        if (exceedMax || exceedMin) {
+            getMinMaxMessage(!!exceedMax, maxOutput.message, minOutput.message, INPUT_VALIDATION_RULES.max, INPUT_VALIDATION_RULES.min);
+            if (!validateAllFieldCriteria) {
+                return error;
+            }
+        }
+    }
+    if (isString(value) && !isEmpty && (maxLength || minLength)) {
+        const maxLengthOutput = getValueAndMessage(maxLength);
+        const minLengthOutput = getValueAndMessage(minLength);
+        const exceedMax = !isNullOrUndefined(maxLengthOutput.value) &&
+            value.length > maxLengthOutput.value;
+        const exceedMin = !isNullOrUndefined(minLengthOutput.value) &&
+            value.length < minLengthOutput.value;
+        if (exceedMax || exceedMin) {
+            getMinMaxMessage(exceedMax, maxLengthOutput.message, minLengthOutput.message);
+            if (!validateAllFieldCriteria) {
+                return error;
+            }
+        }
+    }
+    if (isString(value) && pattern && !isEmpty) {
+        const { value: patternValue, message } = getValueAndMessage(pattern);
+        if (isRegex(patternValue) && !patternValue.test(value)) {
+            error[name] = Object.assign({ type: INPUT_VALIDATION_RULES.pattern, message,
+                ref }, appendErrorsCurry(INPUT_VALIDATION_RULES.pattern, message));
+            if (!validateAllFieldCriteria) {
+                return error;
+            }
+        }
+    }
+    if (validate) {
+        const fieldValue = getFieldValue(fieldsRef, name, shallowFieldsStateRef);
+        const validateRef = isRadioOrCheckbox && options ? options[0].ref : ref;
+        if (isFunction(validate)) {
+            const result = await validate(fieldValue);
+            const validateError = getValidateError(result, validateRef);
+            if (validateError) {
+                error[name] = Object.assign(Object.assign({}, validateError), appendErrorsCurry(INPUT_VALIDATION_RULES.validate, validateError.message));
+                if (!validateAllFieldCriteria) {
+                    return error;
+                }
+            }
+        }
+        else if (isObject(validate)) {
+            let validationResult = {};
+            for (const [key, validateFunction] of Object.entries(validate)) {
+                if (!isEmptyObject(validationResult) && !validateAllFieldCriteria) {
+                    break;
+                }
+                const validateResult = await validateFunction(fieldValue);
+                const validateError = getValidateError(validateResult, validateRef, key);
+                if (validateError) {
+                    validationResult = Object.assign(Object.assign({}, validateError), appendErrorsCurry(key, validateError.message));
+                    if (validateAllFieldCriteria) {
+                        error[name] = validationResult;
+                    }
+                }
+            }
+            if (!isEmptyObject(validationResult)) {
+                error[name] = Object.assign({ ref: validateRef }, validationResult);
+                if (!validateAllFieldCriteria) {
+                    return error;
+                }
+            }
+        }
+    }
+    return error;
+};
+
+const getPath = (rootPath, values, paths = []) => {
+    for (const property in values) {
+        const rootName = (rootPath +
+            (isObject(values)
+                ? `.${property}`
+                : `[${property}]`));
+        isPrimitive(values[property])
+            ? paths.push(rootName)
+            : getPath(rootName, values[property], paths);
+    }
+    return paths;
+};
+
+var assignWatchFields = (fieldValues, fieldName, watchFields, inputValue, isSingleField) => {
+    let value = undefined;
+    watchFields.add(fieldName);
+    if (!isEmptyObject(fieldValues)) {
+        value = get(fieldValues, fieldName);
+        if (isObject(value) || Array.isArray(value)) {
+            getPath(fieldName, value).forEach((name) => watchFields.add(name));
+        }
+    }
+    return isUndefined(value)
+        ? isSingleField
+            ? inputValue
+            : get(inputValue, fieldName)
+        : value;
+};
+
+var skipValidation = ({ isOnBlur, isOnChange, isOnTouch, isTouched, isReValidateOnBlur, isReValidateOnChange, isBlurEvent, isSubmitted, isOnAll, }) => {
+    if (isOnAll) {
+        return false;
+    }
+    else if (!isSubmitted && isOnTouch) {
+        return !(isTouched || isBlurEvent);
+    }
+    else if (isSubmitted ? isReValidateOnBlur : isOnBlur) {
+        return !isBlurEvent;
+    }
+    else if (isSubmitted ? isReValidateOnChange : isOnChange) {
+        return isBlurEvent;
+    }
+    return true;
+};
+
+var getFieldArrayParentName = (name) => name.substring(0, name.indexOf('['));
+
+const isMatchFieldArrayName = (name, searchName) => RegExp(`^${searchName}([|.)\\d+`.replace(/\[/g, '\\[').replace(/\]/g, '\\]')).test(name);
+var isNameInFieldArray = (names, name) => [...names].some((current) => isMatchFieldArrayName(name, current));
+
+var isSelectInput = (element) => element.type === `${SELECT}-one`;
+
+function onDomRemove(fieldsRef, removeFieldEventListenerAndRef) {
+    const observer = new MutationObserver(() => {
+        for (const field of Object.values(fieldsRef.current)) {
+            if (field && field.options) {
+                for (const option of field.options) {
+                    if (option && option.ref && isDetached(option.ref)) {
+                        removeFieldEventListenerAndRef(field);
+                    }
+                }
+            }
+            else if (field && isDetached(field.ref)) {
+                removeFieldEventListenerAndRef(field);
+            }
+        }
+    });
+    observer.observe(window.document, {
+        childList: true,
+        subtree: true,
+    });
+    return observer;
+}
+
+var isWeb = typeof window !== UNDEFINED && typeof document !== UNDEFINED;
+
+function cloneObject(data) {
+    let copy;
+    if (isPrimitive(data) ||
+        (isWeb && (data instanceof File || isHTMLElement(data)))) {
+        return data;
+    }
+    if (data instanceof Date) {
+        copy = new Date(data.getTime());
+        return copy;
+    }
+    if (data instanceof Set) {
+        copy = new Set();
+        for (const item of data) {
+            copy.add(item);
+        }
+        return copy;
+    }
+    if (data instanceof Map) {
+        copy = new Map();
+        for (const key of data.keys()) {
+            copy.set(key, cloneObject(data.get(key)));
+        }
+        return copy;
+    }
+    copy = Array.isArray(data) ? [] : {};
+    for (const key in data) {
+        copy[key] = cloneObject(data[key]);
+    }
+    return copy;
+}
+
+var modeChecker = (mode) => ({
+    isOnSubmit: !mode || mode === VALIDATION_MODE.onSubmit,
+    isOnBlur: mode === VALIDATION_MODE.onBlur,
+    isOnChange: mode === VALIDATION_MODE.onChange,
+    isOnAll: mode === VALIDATION_MODE.all,
+    isOnTouch: mode === VALIDATION_MODE.onTouched,
+});
+
+var isRadioOrCheckboxFunction = (ref) => isRadioInput(ref) || isCheckBoxInput(ref);
+
+const isWindowUndefined = typeof window === UNDEFINED;
+const isProxyEnabled = isWeb ? 'Proxy' in window : typeof Proxy !== UNDEFINED;
+function useForm({ mode = VALIDATION_MODE.onSubmit, reValidateMode = VALIDATION_MODE.onChange, resolver, context, defaultValues = {}, shouldFocusError = true, shouldUnregister = true, criteriaMode, } = {}) {
+    const fieldsRef = React.useRef({});
+    const fieldArrayDefaultValuesRef = React.useRef({});
+    const fieldArrayValuesRef = React.useRef({});
+    const watchFieldsRef = React.useRef(new Set());
+    const useWatchFieldsRef = React.useRef({});
+    const useWatchRenderFunctionsRef = React.useRef({});
+    const fieldsWithValidationRef = React.useRef({});
+    const validFieldsRef = React.useRef({});
+    const defaultValuesRef = React.useRef(defaultValues);
+    const isUnMount = React.useRef(false);
+    const isWatchAllRef = React.useRef(false);
+    const handleChangeRef = React.useRef();
+    const shallowFieldsStateRef = React.useRef({});
+    const resetFieldArrayFunctionRef = React.useRef({});
+    const contextRef = React.useRef(context);
+    const resolverRef = React.useRef(resolver);
+    const fieldArrayNamesRef = React.useRef(new Set());
+    const modeRef = React.useRef(modeChecker(mode));
+    const { isOnSubmit, isOnTouch } = modeRef.current;
+    const isValidateAllFieldCriteria = criteriaMode === VALIDATION_MODE.all;
+    const [formState, setFormState] = React.useState({
+        isDirty: false,
+        isValidating: false,
+        dirtyFields: {},
+        isSubmitted: false,
+        submitCount: 0,
+        touched: {},
+        isSubmitting: false,
+        isSubmitSuccessful: false,
+        isValid: !isOnSubmit,
+        errors: {},
+    });
+    const readFormStateRef = React.useRef({
+        isDirty: !isProxyEnabled,
+        dirtyFields: !isProxyEnabled,
+        touched: !isProxyEnabled || isOnTouch,
+        isValidating: !isProxyEnabled,
+        isSubmitting: !isProxyEnabled,
+        isValid: !isProxyEnabled,
+    });
+    const formStateRef = React.useRef(formState);
+    const observerRef = React.useRef();
+    const { isOnBlur: isReValidateOnBlur, isOnChange: isReValidateOnChange, } = React.useRef(modeChecker(reValidateMode)).current;
+    contextRef.current = context;
+    resolverRef.current = resolver;
+    formStateRef.current = formState;
+    shallowFieldsStateRef.current = shouldUnregister
+        ? {}
+        : isEmptyObject(shallowFieldsStateRef.current)
+            ? cloneObject(defaultValues)
+            : shallowFieldsStateRef.current;
+    const updateFormState = React.useCallback((state = {}) => {
+        if (!isUnMount.current) {
+            formStateRef.current = Object.assign(Object.assign({}, formStateRef.current), state);
+            setFormState(formStateRef.current);
+        }
+    }, []);
+    const updateIsValidating = () => readFormStateRef.current.isValidating &&
+        updateFormState({
+            isValidating: true,
+        });
+    const shouldRenderBaseOnError = React.useCallback((name, error, shouldRender = false, state = {}, isValid) => {
+        let shouldReRender = shouldRender ||
+            isErrorStateChanged({
+                errors: formStateRef.current.errors,
+                error,
+                name,
+                validFields: validFieldsRef.current,
+                fieldsWithValidation: fieldsWithValidationRef.current,
+            });
+        const previousError = get(formStateRef.current.errors, name);
+        if (error) {
+            unset(validFieldsRef.current, name);
+            shouldReRender =
+                shouldReRender ||
+                    !previousError ||
+                    !deepEqual(previousError, error, true);
+            set(formStateRef.current.errors, name, error);
+        }
+        else {
+            if (get(fieldsWithValidationRef.current, name) || resolverRef.current) {
+                set(validFieldsRef.current, name, true);
+                shouldReRender = shouldReRender || previousError;
+            }
+            unset(formStateRef.current.errors, name);
+        }
+        if ((shouldReRender && !isNullOrUndefined(shouldRender)) ||
+            !isEmptyObject(state) ||
+            readFormStateRef.current.isValidating) {
+            updateFormState(Object.assign(Object.assign(Object.assign({}, state), (resolverRef.current ? { isValid: !!isValid } : {})), { isValidating: false }));
+        }
+    }, []);
+    const setFieldValue = React.useCallback((name, rawValue) => {
+        const { ref, options } = fieldsRef.current[name];
+        const value = isWeb && isHTMLElement(ref) && isNullOrUndefined(rawValue)
+            ? ''
+            : rawValue;
+        if (isRadioInput(ref)) {
+            (options || []).forEach(({ ref: radioRef }) => (radioRef.checked = radioRef.value === value));
+        }
+        else if (isFileInput(ref) && !isString(value)) {
+            ref.files = value;
+        }
+        else if (isMultipleSelect(ref)) {
+            [...ref.options].forEach((selectRef) => (selectRef.selected = value.includes(selectRef.value)));
+        }
+        else if (isCheckBoxInput(ref) && options) {
+            options.length > 1
+                ? options.forEach(({ ref: checkboxRef }) => (checkboxRef.checked = Array.isArray(value)
+                    ? !!value.find((data) => data === checkboxRef.value)
+                    : value === checkboxRef.value))
+                : (options[0].ref.checked = !!value);
+        }
+        else {
+            ref.value = value;
+        }
+    }, []);
+    const isFormDirty = React.useCallback((name, data) => {
+        if (readFormStateRef.current.isDirty) {
+            const formValues = getValues();
+            name && data && set(formValues, name, data);
+            return !deepEqual(formValues, defaultValuesRef.current);
+        }
+        return false;
+    }, []);
+    const updateAndGetDirtyState = React.useCallback((name, shouldRender = true) => {
+        if (readFormStateRef.current.isDirty ||
+            readFormStateRef.current.dirtyFields) {
+            const isFieldDirty = !deepEqual(get(defaultValuesRef.current, name), getFieldValue(fieldsRef, name, shallowFieldsStateRef));
+            const isDirtyFieldExist = get(formStateRef.current.dirtyFields, name);
+            const previousIsDirty = formStateRef.current.isDirty;
+            isFieldDirty
+                ? set(formStateRef.current.dirtyFields, name, true)
+                : unset(formStateRef.current.dirtyFields, name);
+            const state = {
+                isDirty: isFormDirty(),
+                dirtyFields: formStateRef.current.dirtyFields,
+            };
+            const isChanged = (readFormStateRef.current.isDirty &&
+                previousIsDirty !== state.isDirty) ||
+                (readFormStateRef.current.dirtyFields &&
+                    isDirtyFieldExist !== get(formStateRef.current.dirtyFields, name));
+            isChanged && shouldRender && updateFormState(state);
+            return isChanged ? state : {};
+        }
+        return {};
+    }, []);
+    const executeValidation = React.useCallback(async (name, skipReRender) => {
+        {
+            if (!fieldsRef.current[name]) {
+                console.warn('📋 Field is missing with `name` attribute: ', name);
+                return false;
+            }
+        }
+        const error = (await validateField(fieldsRef, isValidateAllFieldCriteria, fieldsRef.current[name], shallowFieldsStateRef))[name];
+        shouldRenderBaseOnError(name, error, skipReRender);
+        return isUndefined(error);
+    }, [shouldRenderBaseOnError, isValidateAllFieldCriteria]);
+    const executeSchemaOrResolverValidation = React.useCallback(async (names) => {
+        const { errors } = await resolverRef.current(getValues(), contextRef.current, isValidateAllFieldCriteria);
+        const previousFormIsValid = formStateRef.current.isValid;
+        if (Array.isArray(names)) {
+            const isInputsValid = names
+                .map((name) => {
+                const error = get(errors, name);
+                error
+                    ? set(formStateRef.current.errors, name, error)
+                    : unset(formStateRef.current.errors, name);
+                return !error;
+            })
+                .every(Boolean);
+            updateFormState({
+                isValid: isEmptyObject(errors),
+                isValidating: false,
+            });
+            return isInputsValid;
+        }
+        else {
+            const error = get(errors, names);
+            shouldRenderBaseOnError(names, error, previousFormIsValid !== isEmptyObject(errors), {}, isEmptyObject(errors));
+            return !error;
+        }
+    }, [shouldRenderBaseOnError, isValidateAllFieldCriteria]);
+    const trigger = React.useCallback(async (name) => {
+        const fields = name || Object.keys(fieldsRef.current);
+        updateIsValidating();
+        if (resolverRef.current) {
+            return executeSchemaOrResolverValidation(fields);
+        }
+        if (Array.isArray(fields)) {
+            !name && (formStateRef.current.errors = {});
+            const result = await Promise.all(fields.map(async (data) => await executeValidation(data, null)));
+            updateFormState({
+                isValidating: false,
+            });
+            return result.every(Boolean);
+        }
+        return await executeValidation(fields);
+    }, [executeSchemaOrResolverValidation, executeValidation]);
+    const setInternalValues = React.useCallback((name, value, { shouldDirty, shouldValidate }) => {
+        const data = {};
+        set(data, name, value);
+        for (const fieldName of getPath(name, value)) {
+            if (fieldsRef.current[fieldName]) {
+                setFieldValue(fieldName, get(data, fieldName));
+                shouldDirty && updateAndGetDirtyState(fieldName);
+                shouldValidate && trigger(fieldName);
+            }
+        }
+    }, [trigger, setFieldValue, updateAndGetDirtyState]);
+    const setInternalValue = React.useCallback((name, value, config) => {
+        !shouldUnregister &&
+            !isPrimitive(value) &&
+            set(shallowFieldsStateRef.current, name, Object.assign({}, value));
+        if (fieldsRef.current[name]) {
+            setFieldValue(name, value);
+            config.shouldDirty && updateAndGetDirtyState(name);
+            config.shouldValidate && trigger(name);
+        }
+        else if (!isPrimitive(value)) {
+            setInternalValues(name, value, config);
+            if (fieldArrayNamesRef.current.has(name)) {
+                const parentName = getFieldArrayParentName(name) || name;
+                set(fieldArrayDefaultValuesRef.current, name, value);
+                resetFieldArrayFunctionRef.current[parentName]({
+                    [parentName]: get(fieldArrayDefaultValuesRef.current, parentName),
+                });
+                if ((readFormStateRef.current.isDirty ||
+                    readFormStateRef.current.dirtyFields) &&
+                    config.shouldDirty) {
+                    set(formStateRef.current.dirtyFields, name, setFieldArrayDirtyFields(value, get(defaultValuesRef.current, name, []), get(formStateRef.current.dirtyFields, name, [])));
+                    updateFormState({
+                        isDirty: !deepEqual(Object.assign(Object.assign({}, getValues()), { [name]: value }), defaultValuesRef.current),
+                    });
+                }
+            }
+        }
+        !shouldUnregister && set(shallowFieldsStateRef.current, name, value);
+    }, [updateAndGetDirtyState, setFieldValue, setInternalValues]);
+    const isFieldWatched = (name) => isWatchAllRef.current ||
+        watchFieldsRef.current.has(name) ||
+        watchFieldsRef.current.has((name.match(/\w+/) || [])[0]);
+    const renderWatchedInputs = (name) => {
+        let found = true;
+        if (!isEmptyObject(useWatchFieldsRef.current)) {
+            for (const key in useWatchFieldsRef.current) {
+                if (!name ||
+                    !useWatchFieldsRef.current[key].size ||
+                    useWatchFieldsRef.current[key].has(name) ||
+                    useWatchFieldsRef.current[key].has(getFieldArrayParentName(name))) {
+                    useWatchRenderFunctionsRef.current[key]();
+                    found = false;
+                }
+            }
+        }
+        return found;
+    };
+    function setValue(name, value, config) {
+        setInternalValue(name, value, config || {});
+        isFieldWatched(name) && updateFormState();
+        renderWatchedInputs(name);
+    }
+    handleChangeRef.current = handleChangeRef.current
+        ? handleChangeRef.current
+        : async ({ type, target }) => {
+            let name = target.name;
+            const field = fieldsRef.current[name];
+            let error;
+            let isValid;
+            if (field) {
+                const isBlurEvent = type === EVENTS.BLUR;
+                const shouldSkipValidation = skipValidation(Object.assign({ isBlurEvent,
+                    isReValidateOnChange,
+                    isReValidateOnBlur, isTouched: !!get(formStateRef.current.touched, name), isSubmitted: formStateRef.current.isSubmitted }, modeRef.current));
+                let state = updateAndGetDirtyState(name, false);
+                let shouldRender = !isEmptyObject(state) ||
+                    (!isBlurEvent && isFieldWatched(name));
+                if (isBlurEvent &&
+                    !get(formStateRef.current.touched, name) &&
+                    readFormStateRef.current.touched) {
+                    set(formStateRef.current.touched, name, true);
+                    state = Object.assign(Object.assign({}, state), { touched: formStateRef.current.touched });
+                }
+                if (!shouldUnregister && isCheckBoxInput(target)) {
+                    set(shallowFieldsStateRef.current, name, getFieldValue(fieldsRef, name));
+                }
+                if (shouldSkipValidation) {
+                    !isBlurEvent && renderWatchedInputs(name);
+                    return ((!isEmptyObject(state) ||
+                        (shouldRender && isEmptyObject(state))) &&
+                        updateFormState(state));
+                }
+                updateIsValidating();
+                if (resolverRef.current) {
+                    const { errors } = await resolverRef.current(getValues(), contextRef.current, isValidateAllFieldCriteria);
+                    const previousFormIsValid = formStateRef.current.isValid;
+                    error = get(errors, name);
+                    if (isCheckBoxInput(target) &&
+                        !error &&
+                        resolverRef.current) {
+                        const parentNodeName = getFieldArrayParentName(name);
+                        const currentError = get(errors, parentNodeName, {});
+                        currentError.type &&
+                            currentError.message &&
+                            (error = currentError);
+                        if (parentNodeName &&
+                            (currentError ||
+                                get(formStateRef.current.errors, parentNodeName))) {
+                            name = parentNodeName;
+                        }
+                    }
+                    isValid = isEmptyObject(errors);
+                    previousFormIsValid !== isValid && (shouldRender = true);
+                }
+                else {
+                    error = (await validateField(fieldsRef, isValidateAllFieldCriteria, field, shallowFieldsStateRef))[name];
+                }
+                !isBlurEvent && renderWatchedInputs(name);
+                shouldRenderBaseOnError(name, error, shouldRender, state, isValid);
+            }
+        };
+    function setFieldArrayDefaultValues(data) {
+        if (!shouldUnregister) {
+            let copy = cloneObject(data);
+            for (const value of fieldArrayNamesRef.current) {
+                if (isKey(value) && !copy[value]) {
+                    copy = Object.assign(Object.assign({}, copy), { [value]: [] });
+                }
+            }
+            return copy;
+        }
+        return data;
+    }
+    function getValues(payload) {
+        if (isString(payload)) {
+            return getFieldValue(fieldsRef, payload, shallowFieldsStateRef);
+        }
+        if (Array.isArray(payload)) {
+            const data = {};
+            for (const name of payload) {
+                set(data, name, getFieldValue(fieldsRef, name, shallowFieldsStateRef));
+            }
+            return data;
+        }
+        return setFieldArrayDefaultValues(getFieldsValues(fieldsRef, cloneObject(shallowFieldsStateRef.current), shouldUnregister));
+    }
+    const validateResolver = React.useCallback(async (values = {}) => {
+        const { errors } = await resolverRef.current(Object.assign(Object.assign({}, getValues()), values), contextRef.current, isValidateAllFieldCriteria);
+        const isValid = isEmptyObject(errors);
+        formStateRef.current.isValid !== isValid &&
+            updateFormState({
+                isValid,
+            });
+    }, [isValidateAllFieldCriteria]);
+    const removeFieldEventListener = React.useCallback((field, forceDelete) => findRemovedFieldAndRemoveListener(fieldsRef, handleChangeRef.current, field, shallowFieldsStateRef, shouldUnregister, forceDelete), [shouldUnregister]);
+    const updateWatchedValue = React.useCallback((name) => {
+        if (isWatchAllRef.current) {
+            updateFormState();
+        }
+        else {
+            for (const watchField of watchFieldsRef.current) {
+                if (watchField.startsWith(name)) {
+                    updateFormState();
+                    break;
+                }
+            }
+            renderWatchedInputs(name);
+        }
+    }, []);
+    const removeFieldEventListenerAndRef = React.useCallback((field, forceDelete) => {
+        if (field) {
+            removeFieldEventListener(field, forceDelete);
+            if (shouldUnregister && !compact(field.options || []).length) {
+                unset(validFieldsRef.current, field.ref.name);
+                unset(fieldsWithValidationRef.current, field.ref.name);
+                unset(formStateRef.current.errors, field.ref.name);
+                set(formStateRef.current.dirtyFields, field.ref.name, true);
+                updateFormState({
+                    isDirty: isFormDirty(),
+                });
+                readFormStateRef.current.isValid &&
+                    resolverRef.current &&
+                    validateResolver();
+                updateWatchedValue(field.ref.name);
+            }
+        }
+    }, [validateResolver, removeFieldEventListener]);
+    function clearErrors(name) {
+        name &&
+            (Array.isArray(name) ? name : [name]).forEach((inputName) => fieldsRef.current[inputName] && isKey(inputName)
+                ? delete formStateRef.current.errors[inputName]
+                : unset(formStateRef.current.errors, inputName));
+        updateFormState({
+            errors: name ? formStateRef.current.errors : {},
+        });
+    }
+    function setError(name, error) {
+        const ref = (fieldsRef.current[name] || {}).ref;
+        set(formStateRef.current.errors, name, Object.assign(Object.assign({}, error), { ref }));
+        updateFormState({
+            isValid: false,
+        });
+        error.shouldFocus && ref && ref.focus && ref.focus();
+    }
+    const watchInternal = React.useCallback((fieldNames, defaultValue, watchId) => {
+        const watchFields = watchId
+            ? useWatchFieldsRef.current[watchId]
+            : watchFieldsRef.current;
+        let fieldValues = getFieldsValues(fieldsRef, cloneObject(shallowFieldsStateRef.current), shouldUnregister, false, fieldNames);
+        if (isString(fieldNames)) {
+            if (fieldArrayNamesRef.current.has(fieldNames)) {
+                const fieldArrayValue = get(fieldArrayValuesRef.current, fieldNames, []);
+                fieldValues =
+                    !fieldArrayValue.length ||
+                        fieldArrayValue.length !==
+                            compact(get(fieldValues, fieldNames, [])).length
+                        ? fieldArrayValuesRef.current
+                        : fieldValues;
+            }
+            return assignWatchFields(fieldValues, fieldNames, watchFields, isUndefined(get(defaultValuesRef.current, fieldNames))
+                ? defaultValue
+                : get(defaultValuesRef.current, fieldNames), true);
+        }
+        const combinedDefaultValues = isUndefined(defaultValue)
+            ? defaultValuesRef.current
+            : defaultValue;
+        if (Array.isArray(fieldNames)) {
+            return fieldNames.reduce((previous, name) => (Object.assign(Object.assign({}, previous), { [name]: assignWatchFields(fieldValues, name, watchFields, combinedDefaultValues) })), {});
+        }
+        isWatchAllRef.current = isUndefined(watchId);
+        return transformToNestObject((!isEmptyObject(fieldValues) && fieldValues) ||
+            combinedDefaultValues);
+    }, []);
+    function watch(fieldNames, defaultValue) {
+        return watchInternal(fieldNames, defaultValue);
+    }
+    function unregister(name) {
+        for (const fieldName of Array.isArray(name) ? name : [name]) {
+            removeFieldEventListenerAndRef(fieldsRef.current[fieldName], true);
+        }
+    }
+    function registerFieldRef(ref, options = {}) {
+        {
+            if (!ref.name) {
+                return console.warn('📋 Field is missing `name` attribute', ref, `https://react-hook-form.com/api#useForm`);
+            }
+            if (fieldArrayNamesRef.current.has(ref.name.split(/\[\d+\]$/)[0]) &&
+                !RegExp(`^${ref.name.split(/\[\d+\]$/)[0]}[\\d+].\\w+`
+                    .replace(/\[/g, '\\[')
+                    .replace(/\]/g, '\\]')).test(ref.name)) {
+                return console.warn('📋 `name` prop should be in object shape: name="test[index].name"', ref, 'https://react-hook-form.com/api#useFieldArray');
+            }
+        }
+        const { name, type, value } = ref;
+        const fieldRefAndValidationOptions = Object.assign({ ref }, options);
+        const fields = fieldsRef.current;
+        const isRadioOrCheckbox = isRadioOrCheckboxFunction(ref);
+        const isFieldArray = isNameInFieldArray(fieldArrayNamesRef.current, name);
+        const compareRef = (currentRef) => isWeb && (!isHTMLElement(ref) || currentRef === ref);
+        let field = fields[name];
+        let isEmptyDefaultValue = true;
+        let defaultValue;
+        if (field &&
+            (isRadioOrCheckbox
+                ? Array.isArray(field.options) &&
+                    compact(field.options).find((option) => {
+                        return value === option.ref.value && compareRef(option.ref);
+                    })
+                : compareRef(field.ref))) {
+            fields[name] = Object.assign(Object.assign({}, field), options);
+            return;
+        }
+        if (type) {
+            field = isRadioOrCheckbox
+                ? Object.assign({ options: [
+                        ...compact((field && field.options) || []),
+                        {
+                            ref,
+                        },
+                    ], ref: { type, name } }, options) : Object.assign({}, fieldRefAndValidationOptions);
+        }
+        else {
+            field = fieldRefAndValidationOptions;
+        }
+        fields[name] = field;
+        const isEmptyUnmountFields = isUndefined(get(shallowFieldsStateRef.current, name));
+        if (!isEmptyObject(defaultValuesRef.current) || !isEmptyUnmountFields) {
+            defaultValue = get(isEmptyUnmountFields
+                ? defaultValuesRef.current
+                : shallowFieldsStateRef.current, name);
+            isEmptyDefaultValue = isUndefined(defaultValue);
+            if (!isEmptyDefaultValue && !isFieldArray) {
+                setFieldValue(name, defaultValue);
+            }
+        }
+        if (!isEmptyObject(options)) {
+            set(fieldsWithValidationRef.current, name, true);
+            if (!isOnSubmit && readFormStateRef.current.isValid) {
+                validateField(fieldsRef, isValidateAllFieldCriteria, field, shallowFieldsStateRef).then((error) => {
+                    const previousFormIsValid = formStateRef.current.isValid;
+                    isEmptyObject(error)
+                        ? set(validFieldsRef.current, name, true)
+                        : unset(validFieldsRef.current, name);
+                    previousFormIsValid !== isEmptyObject(error) && updateFormState();
+                });
+            }
+        }
+        if (shouldUnregister && !(isFieldArray && isEmptyDefaultValue)) {
+            !isFieldArray && unset(formStateRef.current.dirtyFields, name);
+        }
+        if (type) {
+            attachEventListeners(isRadioOrCheckbox && field.options
+                ? field.options[field.options.length - 1]
+                : field, isRadioOrCheckbox || isSelectInput(ref), handleChangeRef.current);
+        }
+    }
+    function register(refOrRegisterOptions, options) {
+        if (!isWindowUndefined) {
+            if (isString(refOrRegisterOptions)) {
+                registerFieldRef({ name: refOrRegisterOptions }, options);
+            }
+            else if (isObject(refOrRegisterOptions) &&
+                'name' in refOrRegisterOptions) {
+                registerFieldRef(refOrRegisterOptions, options);
+            }
+            else {
+                return (ref) => ref && registerFieldRef(ref, refOrRegisterOptions);
+            }
+        }
+    }
+    const handleSubmit = React.useCallback((onValid, onInvalid) => async (e) => {
+        if (e && e.preventDefault) {
+            e.preventDefault();
+            e.persist();
+        }
+        let fieldErrors = {};
+        let fieldValues = setFieldArrayDefaultValues(getFieldsValues(fieldsRef, cloneObject(shallowFieldsStateRef.current), shouldUnregister, true));
+        readFormStateRef.current.isSubmitting &&
+            updateFormState({
+                isSubmitting: true,
+            });
+        try {
+            if (resolverRef.current) {
+                const { errors, values } = await resolverRef.current(fieldValues, contextRef.current, isValidateAllFieldCriteria);
+                formStateRef.current.errors = fieldErrors = errors;
+                fieldValues = values;
+            }
+            else {
+                for (const field of Object.values(fieldsRef.current)) {
+                    if (field) {
+                        const { name } = field.ref;
+                        const fieldError = await validateField(fieldsRef, isValidateAllFieldCriteria, field, shallowFieldsStateRef);
+                        if (fieldError[name]) {
+                            set(fieldErrors, name, fieldError[name]);
+                            unset(validFieldsRef.current, name);
+                        }
+                        else if (get(fieldsWithValidationRef.current, name)) {
+                            unset(formStateRef.current.errors, name);
+                            set(validFieldsRef.current, name, true);
+                        }
+                    }
+                }
+            }
+            if (isEmptyObject(fieldErrors) &&
+                Object.keys(formStateRef.current.errors).every((name) => name in fieldsRef.current)) {
+                updateFormState({
+                    errors: {},
+                    isSubmitting: true,
+                });
+                await onValid(fieldValues, e);
+            }
+            else {
+                formStateRef.current.errors = Object.assign(Object.assign({}, formStateRef.current.errors), fieldErrors);
+                onInvalid && (await onInvalid(formStateRef.current.errors, e));
+                shouldFocusError &&
+                    focusOnErrorField(fieldsRef.current, formStateRef.current.errors);
+            }
+        }
+        finally {
+            formStateRef.current.isSubmitting = false;
+            updateFormState({
+                isSubmitted: true,
+                isSubmitting: false,
+                isSubmitSuccessful: isEmptyObject(formStateRef.current.errors),
+                submitCount: formStateRef.current.submitCount + 1,
+            });
+        }
+    }, [shouldFocusError, isValidateAllFieldCriteria]);
+    const resetRefs = ({ errors, isDirty, isSubmitted, touched, isValid, submitCount, dirtyFields, }) => {
+        if (!isValid) {
+            validFieldsRef.current = {};
+            fieldsWithValidationRef.current = {};
+        }
+        fieldArrayDefaultValuesRef.current = {};
+        watchFieldsRef.current = new Set();
+        isWatchAllRef.current = false;
+        updateFormState({
+            submitCount: submitCount ? formStateRef.current.submitCount : 0,
+            isDirty: isDirty ? formStateRef.current.isDirty : false,
+            isSubmitted: isSubmitted ? formStateRef.current.isSubmitted : false,
+            isValid: isValid ? formStateRef.current.isValid : false,
+            dirtyFields: dirtyFields ? formStateRef.current.dirtyFields : {},
+            touched: touched ? formStateRef.current.touched : {},
+            errors: errors ? formStateRef.current.errors : {},
+            isSubmitting: false,
+            isSubmitSuccessful: false,
+        });
+    };
+    const reset = (values, omitResetState = {}) => {
+        if (isWeb) {
+            for (const field of Object.values(fieldsRef.current)) {
+                if (field) {
+                    const { ref, options } = field;
+                    const inputRef = isRadioOrCheckboxFunction(ref) && Array.isArray(options)
+                        ? options[0].ref
+                        : ref;
+                    if (isHTMLElement(inputRef)) {
+                        try {
+                            inputRef.closest('form').reset();
+                            break;
+                        }
+                        catch (_a) { }
+                    }
+                }
+            }
+        }
+        fieldsRef.current = {};
+        defaultValuesRef.current = Object.assign({}, (values || defaultValuesRef.current));
+        values && renderWatchedInputs('');
+        Object.values(resetFieldArrayFunctionRef.current).forEach((resetFieldArray) => isFunction(resetFieldArray) && resetFieldArray());
+        shallowFieldsStateRef.current = shouldUnregister
+            ? {}
+            : cloneObject(values || defaultValuesRef.current);
+        resetRefs(omitResetState);
+    };
+    React.useEffect(() => {
+        resolver && readFormStateRef.current.isValid && validateResolver();
+        observerRef.current =
+            observerRef.current || !isWeb
+                ? observerRef.current
+                : onDomRemove(fieldsRef, removeFieldEventListenerAndRef);
+    }, [removeFieldEventListenerAndRef, defaultValuesRef.current]);
+    React.useEffect(() => () => {
+        observerRef.current && observerRef.current.disconnect();
+        isUnMount.current = true;
+        {
+            return;
+        }
+    }, []);
+    if (!resolver && readFormStateRef.current.isValid) {
+        formState.isValid =
+            deepEqual(validFieldsRef.current, fieldsWithValidationRef.current) &&
+                isEmptyObject(formStateRef.current.errors);
+    }
+    const commonProps = {
+        trigger,
+        setValue: React.useCallback(setValue, [setInternalValue, trigger]),
+        getValues: React.useCallback(getValues, []),
+        register: React.useCallback(register, [defaultValuesRef.current]),
+        unregister: React.useCallback(unregister, []),
+        formState: isProxyEnabled
+            ? new Proxy(formState, {
+                get: (obj, prop) => {
+                    {
+                        if (prop === 'isValid' && isOnSubmit) {
+                            console.warn('📋 `formState.isValid` is applicable with `onTouched`, `onChange` or `onBlur` mode. https://react-hook-form.com/api#formState');
+                        }
+                    }
+                    if (prop in obj) {
+                        readFormStateRef.current[prop] = true;
+                        return obj[prop];
+                    }
+                    return undefined;
+                },
+            })
+            : formState,
+    };
+    const control = React.useMemo(() => (Object.assign({ isFormDirty,
+        updateWatchedValue,
+        shouldUnregister,
+        updateFormState,
+        removeFieldEventListener,
+        watchInternal, mode: modeRef.current, reValidateMode: {
+            isReValidateOnBlur,
+            isReValidateOnChange,
+        }, validateResolver: resolver ? validateResolver : undefined, fieldsRef,
+        resetFieldArrayFunctionRef,
+        useWatchFieldsRef,
+        useWatchRenderFunctionsRef,
+        fieldArrayDefaultValuesRef,
+        validFieldsRef,
+        fieldsWithValidationRef,
+        fieldArrayNamesRef,
+        readFormStateRef,
+        formStateRef,
+        defaultValuesRef,
+        shallowFieldsStateRef,
+        fieldArrayValuesRef }, commonProps)), [
+        defaultValuesRef.current,
+        updateWatchedValue,
+        shouldUnregister,
+        removeFieldEventListener,
+        watchInternal,
+    ]);
+    return Object.assign({ watch,
+        control,
+        handleSubmit, reset: React.useCallback(reset, []), clearErrors: React.useCallback(clearErrors, []), setError: React.useCallback(setError, []), errors: formState.errors }, commonProps);
+}
+
+/*! *****************************************************************************
+Copyright (c) Microsoft Corporation.
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+***************************************************************************** */
+
+function __rest(s, e) {
+    var t = {};
+    for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p) && e.indexOf(p) < 0)
+        t[p] = s[p];
+    if (s != null && typeof Object.getOwnPropertySymbols === "function")
+        for (var i = 0, p = Object.getOwnPropertySymbols(s); i < p.length; i++) {
+            if (e.indexOf(p[i]) < 0 && Object.prototype.propertyIsEnumerable.call(s, p[i]))
+                t[p[i]] = s[p[i]];
+        }
+    return t;
+}
+
+const FormContext = React.createContext(null);
+FormContext.displayName = 'RHFContext';
+const useFormContext = () => React.useContext(FormContext);
+const FormProvider = (_a) => {
+    var { children } = _a, props = __rest(_a, ["children"]);
+    return (React.createElement(FormContext.Provider, { value: Object.assign({}, props) }, children));
+};
+
+var generateId = () => {
+    const d = typeof performance === UNDEFINED ? Date.now() : performance.now() * 1000;
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16 + d) % 16 | 0;
+        return (c == 'x' ? r : (r & 0x3) | 0x8).toString(16);
+    });
+};
+
+function removeAtIndexes(data, indexes) {
+    let i = 0;
+    const temp = [...data];
+    for (const index of indexes) {
+        temp.splice(index - i, 1);
+        i++;
+    }
+    return compact(temp).length ? temp : [];
+}
+var removeArrayAt = (data, index) => isUndefined(index)
+    ? []
+    : removeAtIndexes(data, (Array.isArray(index) ? index : [index]).sort());
+
+var moveArrayAt = (data, from, to) => {
+    if (Array.isArray(data)) {
+        if (isUndefined(data[to])) {
+            data[to] = undefined;
+        }
+        data.splice(to, 0, data.splice(from, 1)[0]);
+        return data;
+    }
+    return [];
+};
+
+var swapArrayAt = (data, indexA, indexB) => {
+    const temp = [data[indexB], data[indexA]];
+    data[indexA] = temp[0];
+    data[indexB] = temp[1];
+};
+
+function prepend(data, value) {
+    return [...(Array.isArray(value) ? value : [value || undefined]), ...data];
+}
+
+function insert(data, index, value) {
+    return [
+        ...data.slice(0, index),
+        ...(Array.isArray(value) ? value : [value || undefined]),
+        ...data.slice(index),
+    ];
+}
+
+var fillEmptyArray = (value) => Array.isArray(value) ? Array(value.length).fill(undefined) : undefined;
+
+var fillBooleanArray = (value) => (Array.isArray(value) ? value : [value]).map((data) => {
+    if (isObject(data)) {
+        const object = {};
+        for (const key in data) {
+            object[key] = true;
+        }
+        return object;
+    }
+    return true;
+});
+
+const mapIds = (values = [], keyName, skipWarn) => {
+    {
+        if (!skipWarn) {
+            for (const value of values) {
+                if (typeof value === 'object') {
+                    if (keyName in value) {
+                        console.warn(`📋 useFieldArray fieldValues contain the keyName \`${keyName}\` which is reserved for use by useFieldArray. https://react-hook-form.com/api#useFieldArray`);
+                        break;
+                    }
+                }
+                else {
+                    console.warn(`📋 useFieldArray input's name should be in object shape instead of flat array. https://react-hook-form.com/api#useFieldArray`);
+                    break;
+                }
+            }
+        }
+    }
+    return values.map((value) => (Object.assign({ [keyName]: value[keyName] || generateId() }, value)));
+};
+const useFieldArray = ({ control, name, keyName = 'id', }) => {
+    const methods = useFormContext();
+    {
+        if (!control && !methods) {
+            throw new Error('📋 useFieldArray is missing `control` prop. https://react-hook-form.com/api#useFieldArray');
+        }
+    }
+    const focusIndexRef = React.useRef(-1);
+    const { isFormDirty, updateWatchedValue, resetFieldArrayFunctionRef, fieldArrayNamesRef, fieldsRef, defaultValuesRef, removeFieldEventListener, formStateRef, shallowFieldsStateRef, updateFormState, readFormStateRef, validFieldsRef, fieldsWithValidationRef, fieldArrayDefaultValuesRef, validateResolver, getValues, shouldUnregister, fieldArrayValuesRef, } = control || methods.control;
+    const fieldArrayParentName = getFieldArrayParentName(name);
+    const memoizedDefaultValues = React.useRef([
+        ...(get(fieldArrayDefaultValuesRef.current, fieldArrayParentName)
+            ? get(fieldArrayDefaultValuesRef.current, name, [])
+            : get(shouldUnregister
+                ? defaultValuesRef.current
+                : shallowFieldsStateRef.current, name, [])),
+    ]);
+    const [fields, setFields] = React.useState(mapIds(memoizedDefaultValues.current, keyName));
+    set(fieldArrayValuesRef.current, name, fields);
+    const omitKey = (fields) => fields.map((_a = {}) => {
+        var _b = keyName, omitted = _a[_b], rest = __rest(_a, [typeof _b === "symbol" ? _b : _b + ""]);
+        return rest;
+    });
+    fieldArrayNamesRef.current.add(name);
+    const getFieldArrayValue = React.useCallback(() => get(fieldArrayValuesRef.current, name, []), [name]);
+    const getCurrentFieldsValues = () => mapIds(get(getValues(), name, getFieldArrayValue()).map((item, index) => (Object.assign(Object.assign({}, getFieldArrayValue()[index]), item))), keyName, true);
+    fieldArrayNamesRef.current.add(name);
+    if (fieldArrayParentName &&
+        !get(fieldArrayDefaultValuesRef.current, fieldArrayParentName)) {
+        set(fieldArrayDefaultValuesRef.current, fieldArrayParentName, cloneObject(get(defaultValuesRef.current, fieldArrayParentName)));
+    }
+    const setFieldAndValidState = (fieldsValues) => {
+        setFields(fieldsValues);
+        set(fieldArrayValuesRef.current, name, fieldsValues);
+        if (readFormStateRef.current.isValid && validateResolver) {
+            const values = getValues();
+            set(values, name, fieldsValues);
+            validateResolver(values);
+        }
+    };
+    const resetFields = () => {
+        for (const key in fieldsRef.current) {
+            if (isMatchFieldArrayName(key, name)) {
+                removeFieldEventListener(fieldsRef.current[key], true);
+                delete fieldsRef.current[key];
+            }
+        }
+    };
+    const cleanup = (ref) => !compact(get(ref, name, [])).length && unset(ref, name);
+    const updateDirtyFieldsWithDefaultValues = (updatedFieldArrayValues) => {
+        if (updatedFieldArrayValues) {
+            set(formStateRef.current.dirtyFields, name, setFieldArrayDirtyFields(omitKey(updatedFieldArrayValues), get(defaultValuesRef.current, name, []), get(formStateRef.current.dirtyFields, name, [])));
+        }
+    };
+    const batchStateUpdate = (method, args, updatedFieldValues, updatedFormValues = [], shouldSet = true, shouldUpdateValid = false) => {
+        if (get(shallowFieldsStateRef.current, name)) {
+            const output = method(get(shallowFieldsStateRef.current, name), args.argA, args.argB);
+            shouldSet && set(shallowFieldsStateRef.current, name, output);
+        }
+        if (get(fieldArrayDefaultValuesRef.current, name)) {
+            const output = method(get(fieldArrayDefaultValuesRef.current, name), args.argA, args.argB);
+            shouldSet && set(fieldArrayDefaultValuesRef.current, name, output);
+            cleanup(fieldArrayDefaultValuesRef.current);
+        }
+        if (Array.isArray(get(formStateRef.current.errors, name))) {
+            const output = method(get(formStateRef.current.errors, name), args.argA, args.argB);
+            shouldSet && set(formStateRef.current.errors, name, output);
+            cleanup(formStateRef.current.errors);
+        }
+        if (readFormStateRef.current.touched &&
+            get(formStateRef.current.touched, name)) {
+            const output = method(get(formStateRef.current.touched, name), args.argA, args.argB);
+            shouldSet && set(formStateRef.current.touched, name, output);
+            cleanup(formStateRef.current.touched);
+        }
+        if (readFormStateRef.current.dirtyFields ||
+            readFormStateRef.current.isDirty) {
+            set(formStateRef.current.dirtyFields, name, setFieldArrayDirtyFields(omitKey(updatedFormValues), get(defaultValuesRef.current, name, []), get(formStateRef.current.dirtyFields, name, [])));
+            updateDirtyFieldsWithDefaultValues(updatedFieldValues);
+            cleanup(formStateRef.current.dirtyFields);
+        }
+        if (shouldUpdateValid &&
+            readFormStateRef.current.isValid &&
+            !validateResolver) {
+            set(validFieldsRef.current, name, method(get(validFieldsRef.current, name, []), args.argA));
+            cleanup(validFieldsRef.current);
+            set(fieldsWithValidationRef.current, name, method(get(fieldsWithValidationRef.current, name, []), args.argA));
+            cleanup(fieldsWithValidationRef.current);
+        }
+        updateFormState({
+            isDirty: isFormDirty(name, omitKey(updatedFormValues)),
+        });
+    };
+    const append = (value, shouldFocus = true) => {
+        const appendValue = Array.isArray(value) ? value : [value];
+        const updateFormValues = [
+            ...getCurrentFieldsValues(),
+            ...mapIds(appendValue, keyName),
+        ];
+        setFieldAndValidState(updateFormValues);
+        if (readFormStateRef.current.dirtyFields ||
+            readFormStateRef.current.isDirty) {
+            updateDirtyFieldsWithDefaultValues(updateFormValues);
+            updateFormState({
+                isDirty: true,
+                dirtyFields: formStateRef.current.dirtyFields,
+            });
+        }
+        !shouldUnregister &&
+            set(shallowFieldsStateRef.current, name, [
+                ...(get(shallowFieldsStateRef.current, name) || []),
+                ...cloneObject(appendValue),
+            ]);
+        focusIndexRef.current = shouldFocus
+            ? get(fieldArrayValuesRef.current, name).length - 1
+            : -1;
+    };
+    const prepend$1 = (value, shouldFocus = true) => {
+        const emptyArray = fillEmptyArray(value);
+        const updatedFieldArrayValues = prepend(getCurrentFieldsValues(), mapIds(Array.isArray(value) ? value : [value], keyName));
+        setFieldAndValidState(updatedFieldArrayValues);
+        resetFields();
+        batchStateUpdate(prepend, {
+            argA: emptyArray,
+            argC: fillBooleanArray(value),
+        }, updatedFieldArrayValues);
+        focusIndexRef.current = shouldFocus ? 0 : -1;
+    };
+    const remove = (index) => {
+        const fieldValues = getCurrentFieldsValues();
+        const updatedFieldValues = removeArrayAt(fieldValues, index);
+        setFieldAndValidState(updatedFieldValues);
+        resetFields();
+        batchStateUpdate(removeArrayAt, {
+            argA: index,
+            argC: index,
+        }, updatedFieldValues, removeArrayAt(fieldValues, index), true, true);
+    };
+    const insert$1 = (index, value, shouldFocus = true) => {
+        const emptyArray = fillEmptyArray(value);
+        const fieldValues = getCurrentFieldsValues();
+        const updatedFieldArrayValues = insert(fieldValues, index, mapIds(Array.isArray(value) ? value : [value], keyName));
+        setFieldAndValidState(updatedFieldArrayValues);
+        resetFields();
+        batchStateUpdate(insert, {
+            argA: index,
+            argB: emptyArray,
+            argC: index,
+            argD: fillBooleanArray(value),
+        }, updatedFieldArrayValues, insert(fieldValues, index));
+        focusIndexRef.current = shouldFocus ? index : -1;
+    };
+    const swap = (indexA, indexB) => {
+        const fieldValues = getCurrentFieldsValues();
+        swapArrayAt(fieldValues, indexA, indexB);
+        resetFields();
+        setFieldAndValidState([...fieldValues]);
+        batchStateUpdate(swapArrayAt, {
+            argA: indexA,
+            argB: indexB,
+            argC: indexA,
+            argD: indexB,
+        }, undefined, fieldValues, false);
+    };
+    const move = (from, to) => {
+        const fieldValues = getCurrentFieldsValues();
+        moveArrayAt(fieldValues, from, to);
+        resetFields();
+        setFieldAndValidState([...fieldValues]);
+        batchStateUpdate(moveArrayAt, {
+            argA: from,
+            argB: to,
+            argC: from,
+            argD: to,
+        }, undefined, fieldValues, false);
+    };
+    React.useEffect(() => {
+        {
+            if (!name) {
+                console.warn('📋 useFieldArray is missing `name` attribute. https://react-hook-form.com/api#useFieldArray');
+            }
+        }
+        const defaultValues = get(fieldArrayDefaultValuesRef.current, name);
+        if (defaultValues && fields.length < defaultValues.length) {
+            defaultValues.pop();
+            set(fieldArrayDefaultValuesRef.current, name, defaultValues);
+        }
+        updateWatchedValue(name);
+        if (focusIndexRef.current > -1) {
+            for (const key in fieldsRef.current) {
+                const field = fieldsRef.current[key];
+                if (key.startsWith(`${name}[${focusIndexRef.current}]`) &&
+                    field.ref.focus) {
+                    field.ref.focus();
+                    break;
+                }
+            }
+        }
+        focusIndexRef.current = -1;
+    }, [fields, name]);
+    React.useEffect(() => {
+        const resetFunctions = resetFieldArrayFunctionRef.current;
+        const fieldArrayNames = fieldArrayNamesRef.current;
+        if (!getFieldArrayParentName(name)) {
+            resetFunctions[name] = (data) => {
+                resetFields();
+                !data && unset(fieldArrayDefaultValuesRef.current, name);
+                unset(shallowFieldsStateRef.current, name);
+                memoizedDefaultValues.current = get(data || defaultValuesRef.current, name);
+                setFields(mapIds(memoizedDefaultValues.current, keyName));
+            };
+        }
+        return () => {
+            {
+                return;
+            }
+        };
+    }, []);
+    return {
+        swap: React.useCallback(swap, [name]),
+        move: React.useCallback(move, [name]),
+        prepend: React.useCallback(prepend$1, [name]),
+        append: React.useCallback(append, [name]),
+        remove: React.useCallback(remove, [name]),
+        insert: React.useCallback(insert$1, [name]),
+        fields,
+    };
+};
+
+var getInputValue = (event) => isPrimitive(event) ||
+    !isObject(event.target) ||
+    (isObject(event.target) && !event.type)
+    ? event
+    : isUndefined(event.target.value)
+        ? event.target.checked
+        : event.target.value;
+
+function useController({ name, rules, defaultValue, control, onFocus, }) {
+    const methods = useFormContext();
+    {
+        if (!control && !methods) {
+            throw new Error('📋 Controller is missing `control` prop. https://react-hook-form.com/api#Controller');
+        }
+    }
+    const { defaultValuesRef, setValue, register, unregister, trigger, mode, reValidateMode: { isReValidateOnBlur, isReValidateOnChange }, formState, formStateRef: { current: { isSubmitted, touched, errors }, }, updateFormState, readFormStateRef, fieldsRef, fieldArrayNamesRef, shallowFieldsStateRef, } = control || methods.control;
+    const isNotFieldArray = !isNameInFieldArray(fieldArrayNamesRef.current, name);
+    const getInitialValue = () => !isUndefined(get(shallowFieldsStateRef.current, name)) && isNotFieldArray
+        ? get(shallowFieldsStateRef.current, name)
+        : isUndefined(defaultValue)
+            ? get(defaultValuesRef.current, name)
+            : defaultValue;
+    const [value, setInputStateValue] = React.useState(getInitialValue());
+    const valueRef = React.useRef(value);
+    const ref = React.useRef({
+        focus: () => null,
+    });
+    const onFocusRef = React.useRef(onFocus ||
+        (() => {
+            if (isFunction(ref.current.focus)) {
+                ref.current.focus();
+            }
+            {
+                if (!isFunction(ref.current.focus)) {
+                    console.warn(`📋 'ref' from Controller render prop must be attached to a React component or a DOM Element whose ref provides a 'focus()' method`);
+                }
+            }
+        }));
+    const shouldValidate = React.useCallback((isBlurEvent) => !skipValidation(Object.assign({ isBlurEvent,
+        isReValidateOnBlur,
+        isReValidateOnChange,
+        isSubmitted, isTouched: !!get(touched, name) }, mode)), [
+        isReValidateOnBlur,
+        isReValidateOnChange,
+        isSubmitted,
+        touched,
+        name,
+        mode,
+    ]);
+    const commonTask = React.useCallback(([event]) => {
+        const data = getInputValue(event);
+        setInputStateValue(data);
+        valueRef.current = data;
+        return data;
+    }, []);
+    const registerField = React.useCallback((shouldUpdateValue) => {
+        {
+            if (!name) {
+                return console.warn('📋 Field is missing `name` prop. https://react-hook-form.com/api#Controller');
+            }
+        }
+        if (fieldsRef.current[name]) {
+            fieldsRef.current[name] = Object.assign({ ref: fieldsRef.current[name].ref }, rules);
+        }
+        else {
+            register(Object.defineProperties({
+                name,
+                focus: onFocusRef.current,
+            }, {
+                value: {
+                    set(data) {
+                        setInputStateValue(data);
+                        valueRef.current = data;
+                    },
+                    get() {
+                        return valueRef.current;
+                    },
+                },
+            }), rules);
+            shouldUpdateValue = isUndefined(get(defaultValuesRef.current, name));
+        }
+        shouldUpdateValue &&
+            isNotFieldArray &&
+            setInputStateValue(getInitialValue());
+    }, [rules, name, register]);
+    React.useEffect(() => () => unregister(name), [name]);
+    React.useEffect(() => {
+        {
+            if (isUndefined(value)) {
+                console.warn(`📋 ${name} is missing in the 'defaultValue' prop of either its Controller (https://react-hook-form.com/api#Controller) or useForm (https://react-hook-form.com/api#useForm)`);
+            }
+            if (!isNotFieldArray && isUndefined(defaultValue)) {
+                console.warn('📋 Controller is missing `defaultValue` prop when using `useFieldArray`. https://react-hook-form.com/api#Controller');
+            }
+        }
+        registerField();
+    }, [registerField]);
+    React.useEffect(() => {
+        !fieldsRef.current[name] && registerField(true);
+    });
+    const onBlur = React.useCallback(() => {
+        if (readFormStateRef.current.touched && !get(touched, name)) {
+            set(touched, name, true);
+            updateFormState({
+                touched,
+            });
+        }
+        shouldValidate(true) && trigger(name);
+    }, [name, updateFormState, shouldValidate, trigger, readFormStateRef]);
+    const onChange = React.useCallback((...event) => setValue(name, commonTask(event), {
+        shouldValidate: shouldValidate(),
+        shouldDirty: true,
+    }), [setValue, name, shouldValidate]);
+    return {
+        field: {
+            onChange,
+            onBlur,
+            name,
+            value,
+            ref,
+        },
+        meta: Object.defineProperties({
+            invalid: !!get(errors, name),
+        }, {
+            isDirty: {
+                get() {
+                    return !!get(formState.dirtyFields, name);
+                },
+            },
+            isTouched: {
+                get() {
+                    return !!get(formState.touched, name);
+                },
+            },
+        }),
+    };
+}
+
+function useWatch({ control, name, defaultValue, }) {
+    const methods = useFormContext();
+    {
+        if (!control && !methods) {
+            throw new Error('📋 useWatch is missing `control` prop. https://react-hook-form.com/api#useWatch');
+        }
+    }
+    const { useWatchFieldsRef, useWatchRenderFunctionsRef, watchInternal, defaultValuesRef, } = control || methods.control;
+    const updateValue = React.useState()[1];
+    const idRef = React.useRef();
+    const defaultValueRef = React.useRef(defaultValue);
+    React.useEffect(() => {
+        {
+            if (name === '') {
+                console.warn('📋 useWatch is missing `name` attribute. https://react-hook-form.com/api#useWatch');
+            }
+        }
+        const id = (idRef.current = generateId());
+        const watchFieldsHookRender = useWatchRenderFunctionsRef.current;
+        const watchFieldsHook = useWatchFieldsRef.current;
+        watchFieldsHook[id] = new Set();
+        watchFieldsHookRender[id] = () => updateValue({});
+        watchInternal(name, defaultValueRef.current, id);
+        return () => {
+            delete watchFieldsHook[id];
+            delete watchFieldsHookRender[id];
+        };
+    }, [
+        name,
+        useWatchRenderFunctionsRef,
+        useWatchFieldsRef,
+        watchInternal,
+        defaultValueRef,
+    ]);
+    return idRef.current
+        ? watchInternal(name, defaultValueRef.current, idRef.current)
+        : isUndefined(defaultValue)
+            ? isString(name)
+                ? get(defaultValuesRef.current, name)
+                : Array.isArray(name)
+                    ? name.reduce((previous, inputName) => (Object.assign(Object.assign({}, previous), { [inputName]: get(defaultValuesRef.current, inputName) })), {})
+                    : defaultValuesRef.current
+            : defaultValue;
+}
+
+const Controller = (props) => {
+    const { rules, as, render, defaultValue, control, onFocus } = props, rest = __rest(props, ["rules", "as", "render", "defaultValue", "control", "onFocus"]);
+    const { field, meta } = useController(props);
+    const componentProps = Object.assign(Object.assign({}, rest), field);
+    return as
+        ? React.isValidElement(as)
+            ? React.cloneElement(as, componentProps)
+            : React.createElement(as, componentProps)
+        : render
+            ? render(field, meta)
+            : null;
+};
+
+exports.Controller = Controller;
+exports.FormProvider = FormProvider;
+exports.appendErrors = appendErrors;
+exports.get = get;
+exports.transformToNestObject = transformToNestObject;
+exports.useController = useController;
+exports.useFieldArray = useFieldArray;
+exports.useForm = useForm;
+exports.useFormContext = useFormContext;
+exports.useWatch = useWatch;
+//# sourceMappingURL=index.cjs.development.js.map
+
+
+/***/ }),
+
+/***/ "./node_modules/react-hook-form/dist/index.js":
+/*!****************************************************!*\
+  !*** ./node_modules/react-hook-form/dist/index.js ***!
+  \****************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+
+if (false) {} else {
+  module.exports = __webpack_require__(/*! ./index.cjs.development.js */ "./node_modules/react-hook-form/dist/index.cjs.development.js")
+}
+
+
+/***/ }),
+
 /***/ "./node_modules/react-is/cjs/react-is.development.js":
 /*!***********************************************************!*\
   !*** ./node_modules/react-is/cjs/react-is.development.js ***!
@@ -32623,6 +37951,345 @@ if (false) {} else {
 
 /***/ }),
 
+/***/ "./resources/ts/components/posts/css/form.css":
+/*!****************************************************!*\
+  !*** ./resources/ts/components/posts/css/form.css ***!
+  \****************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => __WEBPACK_DEFAULT_EXPORT__
+/* harmony export */ });
+/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! !../../../../../node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js */ "./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _node_modules_css_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_1_node_modules_postcss_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_2_form_css__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! !!../../../../../node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!../../../../../node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./form.css */ "./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!./node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./resources/ts/components/posts/css/form.css");
+
+            
+
+var options = {};
+
+options.insert = "head";
+options.singleton = false;
+
+var update = _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default()(_node_modules_css_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_1_node_modules_postcss_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_2_form_css__WEBPACK_IMPORTED_MODULE_1__.default, options);
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (_node_modules_css_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_1_node_modules_postcss_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_2_form_css__WEBPACK_IMPORTED_MODULE_1__.default.locals || {});
+
+/***/ }),
+
+/***/ "./resources/ts/components/users/css/user.css":
+/*!****************************************************!*\
+  !*** ./resources/ts/components/users/css/user.css ***!
+  \****************************************************/
+/***/ ((__unused_webpack_module, __webpack_exports__, __webpack_require__) => {
+
+"use strict";
+__webpack_require__.r(__webpack_exports__);
+/* harmony export */ __webpack_require__.d(__webpack_exports__, {
+/* harmony export */   "default": () => __WEBPACK_DEFAULT_EXPORT__
+/* harmony export */ });
+/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! !../../../../../node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js */ "./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js");
+/* harmony import */ var _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default = /*#__PURE__*/__webpack_require__.n(_node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0__);
+/* harmony import */ var _node_modules_css_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_1_node_modules_postcss_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_2_user_css__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! !!../../../../../node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!../../../../../node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./user.css */ "./node_modules/css-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[1]!./node_modules/postcss-loader/dist/cjs.js??ruleSet[1].rules[7].oneOf[1].use[2]!./resources/ts/components/users/css/user.css");
+
+            
+
+var options = {};
+
+options.insert = "head";
+options.singleton = false;
+
+var update = _node_modules_style_loader_dist_runtime_injectStylesIntoStyleTag_js__WEBPACK_IMPORTED_MODULE_0___default()(_node_modules_css_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_1_node_modules_postcss_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_2_user_css__WEBPACK_IMPORTED_MODULE_1__.default, options);
+
+
+
+/* harmony default export */ const __WEBPACK_DEFAULT_EXPORT__ = (_node_modules_css_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_1_node_modules_postcss_loader_dist_cjs_js_ruleSet_1_rules_7_oneOf_1_use_2_user_css__WEBPACK_IMPORTED_MODULE_1__.default.locals || {});
+
+/***/ }),
+
+/***/ "./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js":
+/*!****************************************************************************!*\
+  !*** ./node_modules/style-loader/dist/runtime/injectStylesIntoStyleTag.js ***!
+  \****************************************************************************/
+/***/ ((module, __unused_webpack_exports, __webpack_require__) => {
+
+"use strict";
+
+
+var isOldIE = function isOldIE() {
+  var memo;
+  return function memorize() {
+    if (typeof memo === 'undefined') {
+      // Test for IE <= 9 as proposed by Browserhacks
+      // @see http://browserhacks.com/#hack-e71d8692f65334173fee715c222cb805
+      // Tests for existence of standard globals is to allow style-loader
+      // to operate correctly into non-standard environments
+      // @see https://github.com/webpack-contrib/style-loader/issues/177
+      memo = Boolean(window && document && document.all && !window.atob);
+    }
+
+    return memo;
+  };
+}();
+
+var getTarget = function getTarget() {
+  var memo = {};
+  return function memorize(target) {
+    if (typeof memo[target] === 'undefined') {
+      var styleTarget = document.querySelector(target); // Special case to return head of iframe instead of iframe itself
+
+      if (window.HTMLIFrameElement && styleTarget instanceof window.HTMLIFrameElement) {
+        try {
+          // This will throw an exception if access to iframe is blocked
+          // due to cross-origin restrictions
+          styleTarget = styleTarget.contentDocument.head;
+        } catch (e) {
+          // istanbul ignore next
+          styleTarget = null;
+        }
+      }
+
+      memo[target] = styleTarget;
+    }
+
+    return memo[target];
+  };
+}();
+
+var stylesInDom = [];
+
+function getIndexByIdentifier(identifier) {
+  var result = -1;
+
+  for (var i = 0; i < stylesInDom.length; i++) {
+    if (stylesInDom[i].identifier === identifier) {
+      result = i;
+      break;
+    }
+  }
+
+  return result;
+}
+
+function modulesToDom(list, options) {
+  var idCountMap = {};
+  var identifiers = [];
+
+  for (var i = 0; i < list.length; i++) {
+    var item = list[i];
+    var id = options.base ? item[0] + options.base : item[0];
+    var count = idCountMap[id] || 0;
+    var identifier = "".concat(id, " ").concat(count);
+    idCountMap[id] = count + 1;
+    var index = getIndexByIdentifier(identifier);
+    var obj = {
+      css: item[1],
+      media: item[2],
+      sourceMap: item[3]
+    };
+
+    if (index !== -1) {
+      stylesInDom[index].references++;
+      stylesInDom[index].updater(obj);
+    } else {
+      stylesInDom.push({
+        identifier: identifier,
+        updater: addStyle(obj, options),
+        references: 1
+      });
+    }
+
+    identifiers.push(identifier);
+  }
+
+  return identifiers;
+}
+
+function insertStyleElement(options) {
+  var style = document.createElement('style');
+  var attributes = options.attributes || {};
+
+  if (typeof attributes.nonce === 'undefined') {
+    var nonce =  true ? __webpack_require__.nc : 0;
+
+    if (nonce) {
+      attributes.nonce = nonce;
+    }
+  }
+
+  Object.keys(attributes).forEach(function (key) {
+    style.setAttribute(key, attributes[key]);
+  });
+
+  if (typeof options.insert === 'function') {
+    options.insert(style);
+  } else {
+    var target = getTarget(options.insert || 'head');
+
+    if (!target) {
+      throw new Error("Couldn't find a style target. This probably means that the value for the 'insert' parameter is invalid.");
+    }
+
+    target.appendChild(style);
+  }
+
+  return style;
+}
+
+function removeStyleElement(style) {
+  // istanbul ignore if
+  if (style.parentNode === null) {
+    return false;
+  }
+
+  style.parentNode.removeChild(style);
+}
+/* istanbul ignore next  */
+
+
+var replaceText = function replaceText() {
+  var textStore = [];
+  return function replace(index, replacement) {
+    textStore[index] = replacement;
+    return textStore.filter(Boolean).join('\n');
+  };
+}();
+
+function applyToSingletonTag(style, index, remove, obj) {
+  var css = remove ? '' : obj.media ? "@media ".concat(obj.media, " {").concat(obj.css, "}") : obj.css; // For old IE
+
+  /* istanbul ignore if  */
+
+  if (style.styleSheet) {
+    style.styleSheet.cssText = replaceText(index, css);
+  } else {
+    var cssNode = document.createTextNode(css);
+    var childNodes = style.childNodes;
+
+    if (childNodes[index]) {
+      style.removeChild(childNodes[index]);
+    }
+
+    if (childNodes.length) {
+      style.insertBefore(cssNode, childNodes[index]);
+    } else {
+      style.appendChild(cssNode);
+    }
+  }
+}
+
+function applyToTag(style, options, obj) {
+  var css = obj.css;
+  var media = obj.media;
+  var sourceMap = obj.sourceMap;
+
+  if (media) {
+    style.setAttribute('media', media);
+  } else {
+    style.removeAttribute('media');
+  }
+
+  if (sourceMap && typeof btoa !== 'undefined') {
+    css += "\n/*# sourceMappingURL=data:application/json;base64,".concat(btoa(unescape(encodeURIComponent(JSON.stringify(sourceMap)))), " */");
+  } // For old IE
+
+  /* istanbul ignore if  */
+
+
+  if (style.styleSheet) {
+    style.styleSheet.cssText = css;
+  } else {
+    while (style.firstChild) {
+      style.removeChild(style.firstChild);
+    }
+
+    style.appendChild(document.createTextNode(css));
+  }
+}
+
+var singleton = null;
+var singletonCounter = 0;
+
+function addStyle(obj, options) {
+  var style;
+  var update;
+  var remove;
+
+  if (options.singleton) {
+    var styleIndex = singletonCounter++;
+    style = singleton || (singleton = insertStyleElement(options));
+    update = applyToSingletonTag.bind(null, style, styleIndex, false);
+    remove = applyToSingletonTag.bind(null, style, styleIndex, true);
+  } else {
+    style = insertStyleElement(options);
+    update = applyToTag.bind(null, style, options);
+
+    remove = function remove() {
+      removeStyleElement(style);
+    };
+  }
+
+  update(obj);
+  return function updateStyle(newObj) {
+    if (newObj) {
+      if (newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap) {
+        return;
+      }
+
+      update(obj = newObj);
+    } else {
+      remove();
+    }
+  };
+}
+
+module.exports = function (list, options) {
+  options = options || {}; // Force single-tag solution on IE6-9, which has a hard limit on the # of <style>
+  // tags it will allow on a page
+
+  if (!options.singleton && typeof options.singleton !== 'boolean') {
+    options.singleton = isOldIE();
+  }
+
+  list = list || [];
+  var lastIdentifiers = modulesToDom(list, options);
+  return function update(newList) {
+    newList = newList || [];
+
+    if (Object.prototype.toString.call(newList) !== '[object Array]') {
+      return;
+    }
+
+    for (var i = 0; i < lastIdentifiers.length; i++) {
+      var identifier = lastIdentifiers[i];
+      var index = getIndexByIdentifier(identifier);
+      stylesInDom[index].references--;
+    }
+
+    var newLastIdentifiers = modulesToDom(newList, options);
+
+    for (var _i = 0; _i < lastIdentifiers.length; _i++) {
+      var _identifier = lastIdentifiers[_i];
+
+      var _index = getIndexByIdentifier(_identifier);
+
+      if (stylesInDom[_index].references === 0) {
+        stylesInDom[_index].updater();
+
+        stylesInDom.splice(_index, 1);
+      }
+    }
+
+    lastIdentifiers = newLastIdentifiers;
+  };
+};
+
+/***/ }),
+
 /***/ "./node_modules/tiny-invariant/dist/tiny-invariant.esm.js":
 /*!****************************************************************!*\
   !*** ./node_modules/tiny-invariant/dist/tiny-invariant.esm.js ***!
@@ -32750,7 +38417,7 @@ function valueEqual(a, b) {
 /******/ 		}
 /******/ 		// Create a new module (and put it into the cache)
 /******/ 		var module = __webpack_module_cache__[moduleId] = {
-/******/ 			// no module.id needed
+/******/ 			id: moduleId,
 /******/ 			// no module.loaded needed
 /******/ 			exports: {}
 /******/ 		};

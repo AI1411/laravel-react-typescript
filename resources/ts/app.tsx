@@ -5,6 +5,7 @@ import Posts from "./components/posts/Posts";
 import User from "./components/users/User";
 import NavBar from "./components/layouts/NavBar";
 import PostDetail from "./components/posts/PostDetail";
+import CreatePost from './components/posts/createPost';
 
 const App: React.FC = () => {
     return (
@@ -14,6 +15,7 @@ const App: React.FC = () => {
                 <Switch>
                     <Route path="/posts" exact component={Posts}/>
                     <Route path="/posts/:id" exact component={PostDetail}/>
+                    <Route path="/post/create" exact component={CreatePost}/>
                     <Route path="/user" exact component={User} />
                 </Switch>
             </div>

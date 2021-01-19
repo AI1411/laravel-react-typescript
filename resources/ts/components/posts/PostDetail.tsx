@@ -31,41 +31,64 @@ const PostDetail = (props: any) => {
         window.location.href = `/posts/${nextId}`;
     }
     return (
-        <div>
-            <div>
-                <div className="container w-full md:max-w-3xl mx-auto pt-20">
+        <main role="main" className="container">
+            <div className="row">
+                <div className="col-md-8 blog-main">
+                    <h3 className="pb-3 mb-4 font-italic border-bottom">
+                        From the Firehose
+                    </h3>
 
-                    <div className="w-full px-4 md:px-6 text-xl text-gray-800 leading-normal">
-
-                        <div className="font-sans">
-                            <a href={'/posts'} className="text-base md:text-sm text-green-500 font-bold no-underline hover:underline">一覧に戻る</a><p></p>
-                            <h1 className="font-bold font-sans break-normal text-gray-900 pt-6 pb-2 text-3xl md:text-4xl">{postDetail.title}</h1>
-                            <p className="text-sm md:text-base font-normal text-gray-600">{postDetail.created_at}</p>
-                            <p className="py-6">{postDetail.body}</p>
-                        </div>
+                    <div className="blog-post">
+                        <h2 className="blog-post-title">{postDetail.title}</h2>
+                        <p className="blog-post-meta">{postDetail.created_at}</p>
+                        <hr/>
+                          <p>{postDetail.body}</p>
                     </div>
+                    <nav className="blog-pagination">
+                        <a className="btn btn-outline-primary" href="#">古い記事</a>
+                        <a className="btn btn-outline-secondary disabled" href="#">新しい記事</a>
+                    </nav>
 
-                    <div className="text-base md:text-sm text-gray-500 px-4 py-6">
-                        Tags: <a href="#" className="text-base md:text-sm text-green-500 no-underline hover:underline">Link</a>
-                    </div>
-
-                    <hr className="border-b-2 border-gray-400 mb-8 mx-4"/>
-                    <div className="font-sans flex justify-between content-center px-4 pb-12">
-                        <div className="text-left">
-                            <p>
-                                <a href="#" onClick={() => prev()} className="break-normal text-base md:text-sm text-green-500 font-bold no-underline hover:underline">&lt; 前へ</a>
-                            </p>
-                        </div>
-                        <div className="text-right">
-                            <p>
-                                <a href="#" onClick={() => next()} className="break-normal text-base md:text-sm text-green-500 font-bold no-underline hover:underline">次へ &gt;</a>
-                            </p>
-                        </div>
-                    </div>
                 </div>
 
+                <aside className="col-md-4 blog-sidebar">
+                    <div className="p-3 mb-3 bg-light rounded">
+                        <h4 className="font-italic">ブログについて</h4>
+                        <p className="mb-0">吾輩は猫である。名前はまだ無い。どこで生れたかとんと見当がつかぬ。何でも<em>薄暗いじめじめした所で</em>ニャーニャー泣いていた事だけは記憶している。
+                        </p>
+                    </div>
+
+                    <div className="p-3">
+                        <h4 className="font-italic">アーカイブ</h4>
+                        <ol className="list-unstyled mb-0">
+                            <li><a href="#">2014/03</a></li>
+                            <li><a href="#">2014/02</a></li>
+                            <li><a href="#">2014/01</a></li>
+                            <li><a href="#">2013/12</a></li>
+                            <li><a href="#">2013/11</a></li>
+                            <li><a href="#">2013/10</a></li>
+                            <li><a href="#">2013/09</a></li>
+                            <li><a href="#">2013/08</a></li>
+                            <li><a href="#">2013/07</a></li>
+                            <li><a href="#">2013/06</a></li>
+                            <li><a href="#">2013/05</a></li>
+                            <li><a href="#">2013/04</a></li>
+                        </ol>
+                    </div>
+
+                    <div className="p-3">
+                        <h4 className="font-italic">SNS</h4>
+                        <ol className="list-unstyled">
+                            <li><a href="#">GitHub</a></li>
+                            <li><a href="#">Twitter</a></li>
+                            <li><a href="#">Facebook</a></li>
+                        </ol>
+                    </div>
+                </aside>
+
             </div>
-        </div>
+
+        </main>
     )
 }
 
